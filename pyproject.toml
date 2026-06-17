@@ -2,7 +2,7 @@
 name = "epubocr"
 version = "0.1.0"
 description = "Fidelity-first OCR pipeline that improves image-only EPUBs (see epubOCR.md)."
-readme = "epubOCR.md"
+readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "typer>=0.12",        # CLI
