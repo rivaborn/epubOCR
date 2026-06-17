@@ -1,0 +1,45 @@
+[project]
+name = "epubocr"
+version = "0.1.0"
+description = "Fidelity-first OCR pipeline that improves image-only EPUBs (see epubOCR.md)."
+readme = "epubOCR.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "typer>=0.12",        # CLI
+    "lxml>=5.2",          # OPF/XHTML parsing on ingest
+    "ebooklib>=0.20",     # EPUB3 build on assemble
+    "pillow>=10.3",       # image handling / hashing
+    "openai>=1.40",       # OpenAI-compatible client for the 3090 endpoints
+    "rapidfuzz>=3.9",     # alignment / CER-WER / fidelity verifier
+]
+
+# Heavy GPU/OCR backends are opt-in so the core CLI installs light and fast.
+# Install a backend only when you actually run that engine:
+#   uv sync --extra ocr-local      # Tesseract + OpenCV (CPU)
+#   uv sync --extra surya          # Surya/Marker (pulls torch — large)
+[project.optional-dependencies]
+ocr-local = [
+    "pytesseract>=0.3.13",
+    "opencv-python-headless>=4.10",
+    "numpy>=1.26",
+]
+surya = [
+    "surya-ocr>=0.16",    # detection+recognition+layout; pulls torch — install deliberately
+]
+paddle = [
+    "paddleocr>=3.0",
+]
+
+[project.scripts]
+epubocr = "epubocr.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["epubocr"]
+
+[tool.uv]
+# Keep heavy extras out of the default lock/sync; opt in per the comments above.
+package = true

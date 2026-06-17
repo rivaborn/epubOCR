@@ -1,0 +1,52 @@
+# epubocr configuration TEMPLATE — see epubOCR.md for the design rationale.
+# Copy this to `config.local.toml` (gitignored) and set your real endpoints there;
+# epubocr prefers config.local.toml when present. Point base_url at an IP literal,
+# NOT localhost, if you front a service with a relay (IPv4-only; Python stalls ~5s on IPv6).
+
+[endpoints.ollama]                                  # DEFAULT — swaps model per request
+base_url = "http://127.0.0.1:11434/v1"
+api_key  = "ollama"                                 # Ollama ignores the key but the SDK requires one
+
+[endpoints.vllm]                                    # throughput option — one model per process
+base_url = "http://127.0.0.1:11437/v1"
+api_key  = "EMPTY"
+
+# Which endpoint each role uses by default.
+# vlm_ocr -> vLLM for batch throughput (needs `serve.sh vl7` loaded on the host).
+# text_cleanup stays on Ollama so cleanup doesn't require a second vLLM model swap.
+[roles]
+vlm_ocr        = "vllm"
+text_cleanup   = "ollama"
+
+# Per-endpoint model names differ (Ollama tags vs vLLM served names).
+[models.ollama]
+vlm_ocr        = "qwen2.5vl:7b"                      # escalate hard pages to qwen2.5vl:32b
+vlm_ocr_hard   = "qwen2.5vl:32b"
+text_cleanup   = "qwen3:32b"
+text_xhtml     = "qwen2.5-coder:32b"
+
+[models.vllm]
+vlm_ocr        = "qwen2.5-vl-7b"                     # requires host-side: serve.sh vl7
+text_cleanup   = "qwen3-32b"                         # requires host-side: serve.sh q3-32b
+text_xhtml     = "qwen3-coder-30b"                   # currently loaded on the box
+
+# OCR engine default (laptop). One of: tesseract | surya | paddle | vlm.
+[ocr]
+default_engine = "surya"                             # fidelity-grade: confidence + reading order on the 4060
+
+# Fidelity verifier thresholds (§7). A cleaned page that drifts past these is held for QA.
+[fidelity]
+max_cer_vs_ocr        = 0.15                          # char edit ratio of cleaned-vs-OCR substance
+max_insertion_ratio   = 0.05                          # new alphanumeric runs absent from OCR
+max_net_length_delta  = 0.20                          # |len(clean)-len(ocr)| / len(ocr)
+
+# Adaptive preprocessing — steps off by default; enabled when detected AND eval improves.
+[preprocess]
+deskew         = true
+denoise        = false
+crop_borders   = false
+upscale_lowres = false
+split_spreads  = false
+
+[paths]
+projects_root = "book_projects"                      # one book_project/ per input EPUB

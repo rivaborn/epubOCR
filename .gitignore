@@ -1,0 +1,18 @@
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.uv/
+
+# epubocr working data (large; regenerable)
+book_projects/
+*.epub
+!tests/fixtures/*.epub
+
+# tooling
+epubcheck*.jar
+.python-version.local
+
+# local config with real endpoints (keep private endpoints out of the repo)
+config.local.toml
