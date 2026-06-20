@@ -98,6 +98,8 @@ def ocr(
     engine: str = typer.Option(None, help="tesseract|surya|paddle|vlm (default from config)"),
     force: bool = typer.Option(False, help="ignore cache and re-OCR every page"),
     limit: int = typer.Option(None, help="OCR only the first N image pages (sampling big books)"),
+    preprocess: bool = typer.Option(None, "--preprocess/--no-preprocess",
+                                    help="override the engine's preprocessing (contrast/deskew) default"),
 ):
     """Run OCR over an ingested book's image pages → ocr/page_XXXX.{raw.json,text.txt}."""
     from .pipeline import ocr_book
@@ -110,7 +112,8 @@ def ocr(
                     fg=typer.colors.RED)
         raise typer.Exit(code=2)
 
-    results = ocr_book(project, engine or cfg.ocr_default_engine, cfg, force=force, limit=limit)
+    results = ocr_book(project, engine or cfg.ocr_default_engine, cfg, force=force, limit=limit,
+                       preprocess=preprocess)
     n_cached = sum(1 for r in results if r.cached)
     n_degenerate = sum(1 for r in results if r.degenerate)
     typer.echo(f"OCR'd {len(results)} image pages ({n_cached} from cache, "

@@ -11,12 +11,15 @@ api_key  = "ollama"                                 # Ollama ignores the key but
 base_url = "http://127.0.0.1:11437/v1"
 api_key  = "EMPTY"
 
-# Which endpoint each role uses by default.
-# vlm_ocr -> vLLM for batch throughput (needs `serve.sh vl7` loaded on the host).
-# text_cleanup stays on Ollama so cleanup doesn't require a second vLLM model swap.
+[endpoints.gateway]                                 # LLMConfig arbiter — auto-loads models on first /v1 request
+base_url = "http://127.0.0.1:11430/v1"
+api_key  = "EMPTY"
+
+# Route through the gateway: it auto-loads models on demand (no manual serve.sh swap)
+# and arbitrates a single GPU (evict-wait then load). Use ollama/vllm directly to pin one.
 [roles]
-vlm_ocr        = "vllm"
-text_cleanup   = "ollama"
+vlm_ocr        = "gateway"
+text_cleanup   = "gateway"
 
 # Per-endpoint model names differ (Ollama tags vs vLLM served names).
 [models.ollama]
@@ -30,6 +33,12 @@ vlm_ocr        = "qwen2.5-vl-7b"                     # requires host-side: serve
 text_cleanup   = "qwen3-32b"                         # requires host-side: serve.sh q3-32b
 text_xhtml     = "qwen3-coder-30b"                   # currently loaded on the box
 
+[models.gateway]                                    # gateway resolves Ollama tags (':') or vLLM served names ('-')
+vlm_ocr        = "qwen2.5vl:7b"                      # auto-loads on request; escalate hard pages to 32b
+vlm_ocr_hard   = "qwen2.5-vl-32b"
+text_cleanup   = "qwen3:32b"
+text_xhtml     = "qwen2.5-coder:32b"
+
 # OCR engine default (laptop). One of: tesseract | surya | paddle | vlm.
 [ocr]
 default_engine = "surya"                             # fidelity-grade: confidence + reading order on the 4060
@@ -42,6 +51,8 @@ max_net_length_delta  = 0.20                          # |len(clean)-len(ocr)| / 
 
 # Adaptive preprocessing — steps off by default; enabled when detected AND eval improves.
 [preprocess]
+autocontrast_cutoff = 1          # clip this % of histogram tails before stretching
+contrast            = 1.6        # >1 lifts faded scans (applied when preprocessing is on)
 deskew         = true
 denoise        = false
 crop_borders   = false

@@ -39,20 +39,24 @@ def _image_for_page(project: BookProject, page: dict) -> Path | None:
     return project.pages / imgs[0]
 
 
-def ocr_image(engine: OCREngine, src: Path, project: BookProject, cfg: Config) -> tuple[OcrResult, Path]:
-    """Preprocess (if the engine wants it) then OCR a single image. Returns (result, image_used)."""
+def ocr_image(engine: OCREngine, src: Path, project: BookProject, cfg: Config,
+              preprocess: bool | None = None) -> tuple[OcrResult, Path]:
+    """Preprocess (if requested) then OCR a single image. ``preprocess`` overrides the
+    engine default (None -> engine.wants_preprocess). Returns (result, image_used)."""
+    use_pp = engine.wants_preprocess if preprocess is None else preprocess
     image_used = src
-    if engine.wants_preprocess:
+    if use_pp:
         processed = src.with_name(src.stem.replace("_original", "") + "_processed.png")
         image_used = preprocess_image(src, processed, cfg.preprocess)
     return engine.run(image_used), image_used
 
 
 def ocr_book(project: BookProject, engine_name: str, cfg: Config, *, force: bool = False,
-             limit: int | None = None) -> list[PageOcr]:
+             limit: int | None = None, preprocess: bool | None = None) -> list[PageOcr]:
     manifest = project.read_json(project.manifest_path)
     engine = get_engine(engine_name, cfg)
-    params = {"engine": engine.identity(), "preprocess": cfg.preprocess if engine.wants_preprocess else None}
+    use_pp = engine.wants_preprocess if preprocess is None else preprocess
+    params = {"engine": engine.identity(), "preprocess": cfg.preprocess if use_pp else None}
 
     out: list[PageOcr] = []
     for page in manifest["pages"]:
@@ -71,7 +75,7 @@ def ocr_book(project: BookProject, engine_name: str, cfg: Config, *, force: bool
                                engine=cached.get("engine", engine.identity()), meta=cached.get("meta", {}))
             was_cached = True
         else:
-            result, _ = ocr_image(engine, src, project, cfg)
+            result, _ = ocr_image(engine, src, project, cfg, preprocess=preprocess)
             project.cache_put("ocr", key, result.to_json())
             was_cached = False
 
@@ -132,13 +136,21 @@ def _preserve_text_body(source_epub: Path, href: str) -> str:
     return "\n".join(parts) or "<p></p>"
 
 
+def _page_conf(project: BookProject, stem: str) -> float | None:
+    """Mean OCR confidence for a page, from its raw.json (None if the engine has none)."""
+    p = project.ocr / f"{stem}.raw.json"
+    return project.read_json(p).get("mean_conf") if p.exists() else None
+
+
 def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
                title: str | None = None, cleanup_endpoint: str | None = None,
-               cleanup_model: str | None = None) -> tuple[Path, dict]:
+               cleanup_model: str | None = None, conf_floor: float = 0.80) -> tuple[Path, dict]:
     """Assemble an improved EPUB from the manifest + per-page OCR (deterministic by default).
 
-    Per-page adaptive output (epubOCR.md §8): cover/low-confidence -> facsimile;
-    scanned text pages -> reflowable from cleaned OCR; real text pages -> preserved.
+    Per-page adaptive output (epubOCR.md §8): cover and low-confidence pages -> facsimile
+    (with the OCR text kept as a hidden searchable layer); confident scanned pages ->
+    reflowable from cleaned OCR; real text pages -> preserved. ``conf_floor`` is the OCR
+    confidence below which a page is preserved as facsimile rather than trusted as text.
     """
     manifest = project.read_json(project.manifest_path)
     source_epub = next(iter(project.source.glob("*.epub")), None)
@@ -159,18 +171,25 @@ def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
 
         page_no += 1
         if ptype in ("image", "mixed"):
-            text_path = project.ocr / f"page_{idx + 1:04d}.text.txt"
+            stem = f"page_{idx + 1:04d}"
+            text_path = project.ocr / f"{stem}.text.txt"
             raw = text_path.read_text(encoding="utf-8") if text_path.exists() else ""
-            if raw.strip():
+            conf = _page_conf(project, stem)
+            # Reflowable only with usable text AND adequate confidence. A traditional engine
+            # below the floor (or no text) -> facsimile; a VLM (conf=None) stays reflowable and
+            # relies on the degeneracy guard + fidelity verifier instead.
+            low_conf = conf is not None and conf < conf_floor
+            if raw.strip() and not low_conf:
                 body, held = _cleaned_body(cfg, raw, use_llm, cleanup_endpoint, cleanup_model)
                 if held:
                     counts["held"] += 1
                 docs.append(SpineDoc(idx, f"Page {page_no}", OutputMode.REFLOWABLE,
                                      page_number=page_no, body_xhtml=body))
                 counts["reflowable"] += 1
-            else:  # not OCR'd yet -> facsimile fallback so build still works
+            else:  # low-confidence or un-OCR'd -> facsimile, keep OCR text as searchable layer
                 docs.append(SpineDoc(idx, f"Page {page_no}", OutputMode.FACSIMILE,
-                                     page_number=page_no, image_path=_image_for_page(project, page)))
+                                     page_number=page_no, image_path=_image_for_page(project, page),
+                                     ocr_text=raw.strip() or None))
                 counts["facsimile"] += 1
         elif ptype == "text":
             body = _preserve_text_body(source_epub, page["href"]) if source_epub else "<p></p>"

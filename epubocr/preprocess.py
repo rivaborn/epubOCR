@@ -20,7 +20,15 @@ def preprocess_image(src: Path, dst: Path, cfg: dict | None = None) -> Path:
     cfg = cfg or {}
     img = ImageOps.exif_transpose(Image.open(src))   # normalize orientation
     img = ImageOps.grayscale(img)
-    img = ImageOps.autocontrast(img)
+
+    if cfg.get("clahe") or cfg.get("binarize"):
+        img = _cv_enhance(img, cfg)                  # local contrast + thresholding (faded scans)
+    else:
+        img = ImageOps.autocontrast(img, cutoff=cfg.get("autocontrast_cutoff", 0))
+        factor = float(cfg.get("contrast", 1.0))     # >1 lifts faded scans (linear)
+        if factor != 1.0:
+            from PIL import ImageEnhance
+            img = ImageEnhance.Contrast(img).enhance(factor)
 
     if cfg.get("deskew"):
         img = _deskew(img)
@@ -29,6 +37,34 @@ def preprocess_image(src: Path, dst: Path, cfg: dict | None = None) -> Path:
     dst.parent.mkdir(parents=True, exist_ok=True)
     img.save(dst)
     return dst
+
+
+def _cv_enhance(pil_img, cfg: dict):
+    """CLAHE (local contrast) and/or binarization for faded/low-contrast scans (OpenCV).
+
+    ``clahe`` = local histogram equalization; ``binarize`` = 'adaptive' (Sauvola-style
+    local threshold, best for uneven fading) or 'otsu' (global). Falls back to the input
+    if OpenCV isn't installed.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return pil_img
+    from PIL import Image
+
+    arr = np.array(pil_img)
+    if cfg.get("clahe"):
+        clahe = cv2.createCLAHE(clipLimit=float(cfg.get("clahe_clip", 2.0)), tileGridSize=(8, 8))
+        arr = clahe.apply(arr)
+    mode = cfg.get("binarize")
+    if mode == "adaptive":
+        block = int(cfg.get("adaptive_block", 31)) | 1          # must be odd
+        arr = cv2.adaptiveThreshold(arr, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                    cv2.THRESH_BINARY, block, int(cfg.get("adaptive_c", 15)))
+    elif mode == "otsu":
+        _, arr = cv2.threshold(arr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return Image.fromarray(arr)
 
 
 def _deskew(pil_img):
