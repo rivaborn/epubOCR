@@ -80,6 +80,35 @@ to use **Marker** (it already shares our Surya core) or **pdf-craft** (for books
 lifting, and keep `epubocr`'s confidence-routing + facsimile-fallback layer on top for low-quality
 scans where committing to clean text would fabricate it.
 
+## "Would converting the EPUB to a PDF and running Marker do better?"
+
+A natural question, since Marker is the mature tool. For a **faded scan like *This Town*, no** — and
+the PDF step is pointless. The reasoning is counterintuitive:
+
+- **Marker uses the same OCR engine we do (Surya).** On the faded pages its raw recognition would be
+  ~identical to ours (mean confidence ≈ 0.49, mostly garbled) — it can't read faded ink any better,
+  because it's the same model on the same pixels. The bottleneck is **scan quality, not the tool**.
+- **EPUB → PDF changes nothing.** The EPUB is image-only (page-scan JPEGs); converting to PDF just
+  re-wraps the same JPEGs. And Marker **accepts EPUB directly** (`--force_ocr`), so the PDF detour adds
+  nothing (a re-encode can only lose quality).
+
+Where each actually wins:
+
+| Scenario                          | Better tool | Why                                                                        |
+| --------------------------------- | ----------- | -------------------------------------------------------------------------- |
+| Clean, readable scanned book      | **Marker**  | far better layout, tables, equations, reading order; optional LLM refine   |
+| Faded scan (e.g. *This Town*)     | **epubocr** | same OCR, but we keep low-confidence pages as **facsimile** instead of emitting garbage |
+| Raw OCR accuracy on the faded ink | tie         | identical Surya engine                                                      |
+
+Two reasons ours is the better result *specifically* on a degraded scan: Marker commits to **markdown**
+and has no "too low-confidence → keep the page image" path, so it would output the garbled/hallucinated
+text for the ~88% of unreadable pages; and getting an EPUB back out (markdown → EPUB via pandoc/Calibre)
+**discards the page images**, losing the facsimile option that is the only sane output here.
+
+**Takeaway:** it isn't "ours vs Marker" — it's **Marker (or pdf-craft) for OCR + structure on readable
+books, with epubocr's confidence-routing + facsimile-fallback layer on top** for pages too degraded to
+trust. For *This Town*, no tool rescues it; a cleaner source scan is the only real fix.
+
 ## Sources
 
 - [Best Open-Source PDF-to-Markdown Tools in 2026 (Marker vs Docling vs MinerU vs pdf-craft)](https://themenonlab.blog/blog/best-open-source-pdf-to-markdown-tools-2026)
