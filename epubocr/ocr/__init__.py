@@ -21,7 +21,7 @@ def get_engine(name: str, config: Config) -> OCREngine:
         return VlmOcrEngine.from_config(config)
     if name in ("surya", "marker"):
         from .surya_marker import SuryaEngine
-        return SuryaEngine()
+        return SuryaEngine(layout=bool(config.raw.get("ocr", {}).get("layout", False)))
     if name == "paddle":
         from .paddle import PaddleEngine
         return PaddleEngine()

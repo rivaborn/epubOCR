@@ -109,6 +109,28 @@ text for the ~88% of unreadable pages; and getting an EPUB back out (markdown �
 books, with epubocr's confidence-routing + facsimile-fallback layer on top** for pages too degraded to
 trust. For *This Town*, no tool rescues it; a cleaner source scan is the only real fix.
 
+## Borrowing Marker's structure layer (without the GPL)
+
+Marker is essentially an orchestrator over Surya's detection / recognition / **layout** / **table**
+predictors — and we already have `surya-ocr` installed, which exposes `LayoutPredictor` and
+`TableRecPredictor` directly. So rather than import GPL-3 Marker code (which would make a distributed
+`epubocr` GPL and flatten our per-page confidence + facsimile routing), we added the structure layer
+**natively**:
+
+- Opt-in via `[ocr] layout = true`. The Surya engine then also runs `LayoutPredictor` and attaches
+  ordered semantic **blocks** (headings, paragraphs, lists, footnotes, tables) to the page, dropping
+  running headers/footers/page numbers. The builder renders blocks to XHTML for reflowable pages.
+- The linear OCR text and per-page **confidence are unchanged**, so fidelity routing and the facsimile
+  fallback are untouched. It's purely additive, off by default.
+- Implemented in `structure.py` (`build_blocks`), `assemble.blocks_to_xhtml`, and `SuryaEngine(layout=…)`.
+
+**Honest caveat:** Surya's *layout* model degrades on **faded** scans the same way recognition does — on
+*This Town* it labels pages as `Picture` or emits duplicate `PageFooter` regions, so the feature yields
+no benefit there (and those low-confidence pages go to facsimile anyway). It helps **clean, structured**
+books; when layout is unhelpful the block builder degrades gracefully to paragraph-joining (never worse
+than the default). Full table-cell reconstruction (`TableRecPredictor`) is wired-ready but not yet
+enabled — it needs a clean book with real tables to validate.
+
 ## "Would a frontier model help?"
 
 Frontier multimodal models (Gemini 3 Pro, GPT-5, Claude Opus with vision) are genuinely **better

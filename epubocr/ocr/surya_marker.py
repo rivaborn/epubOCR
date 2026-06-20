@@ -19,14 +19,16 @@ class SuryaEngine(OCREngine):
     name = "surya"
     wants_preprocess = False  # Surya does its own detection/normalization
 
-    def __init__(self, device: str | None = None, dtype=None):
+    def __init__(self, device: str | None = None, dtype=None, layout: bool = False):
         self._rec = None
         self._det = None
+        self._layout_pred = None
         self._device = device
         self._dtype = dtype
+        self._layout = layout            # opt-in: also produce structured blocks (headings/tables/order)
 
     def identity(self) -> str:
-        return f"surya:0.17:{self._device or 'auto'}"
+        return f"surya:0.17:{self._device or 'auto'}{':layout' if self._layout else ''}"
 
     def _ensure_loaded(self) -> None:
         if self._rec is not None:
@@ -39,9 +41,12 @@ class SuryaEngine(OCREngine):
         device = self._device or ("cuda" if torch.cuda.is_available() else "cpu")
         dtype = self._dtype or (torch.float16 if device == "cuda" else torch.float32)
         self._device = device
-        foundation = FoundationPredictor(device=device, dtype=dtype)
+        foundation = FoundationPredictor(device=device, dtype=dtype)   # shared across predictors
         self._rec = RecognitionPredictor(foundation)
         self._det = DetectionPredictor(device=device, dtype=dtype)
+        if self._layout:
+            from surya.layout import LayoutPredictor
+            self._layout_pred = LayoutPredictor(foundation)
 
     def run(self, image_path: Path) -> OcrResult:
         from PIL import Image
@@ -65,12 +70,20 @@ class SuryaEngine(OCREngine):
             if conf is not None:
                 confs.append(float(conf))
 
+        meta = {"device": self._device, "lines": len(result.text_lines)}
+        if self._layout_pred is not None:
+            from ..structure import build_blocks, poly_bbox
+            layout_res = self._layout_pred([img])[0]
+            line_items = [((ln.text or ""), poly_bbox(ln.polygon)) for ln in result.text_lines]
+            blocks = build_blocks(line_items, layout_res.bboxes)
+            meta["blocks"] = [b.to_json() for b in blocks]
+
         return OcrResult(
             text="\n".join(texts),
             words=words,
             mean_conf=(sum(confs) / len(confs) if confs else None),
             engine=self.name,
-            meta={"device": self._device, "lines": len(result.text_lines)},
+            meta=meta,
         )
 
 

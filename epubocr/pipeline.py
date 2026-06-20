@@ -15,7 +15,7 @@ from .ocr.base import OCREngine, OcrResult
 from .preprocess import preprocess_image
 from .storage import BookProject, cache_key
 from . import layout
-from .assemble import OutputMode, SpineDoc, build_epub, paragraphs_to_xhtml
+from .assemble import OutputMode, SpineDoc, blocks_to_xhtml, build_epub, paragraphs_to_xhtml
 from .eval import metrics
 
 _OCR_PAGE_TYPES = {"image", "cover", "mixed"}
@@ -142,6 +142,14 @@ def _page_conf(project: BookProject, stem: str) -> float | None:
     return project.read_json(p).get("mean_conf") if p.exists() else None
 
 
+def _page_blocks(project: BookProject, stem: str) -> list | None:
+    """Layout blocks for a page, if the OCR engine produced them (Surya layout=True)."""
+    p = project.ocr / f"{stem}.raw.json"
+    if not p.exists():
+        return None
+    return (project.read_json(p).get("meta") or {}).get("blocks")
+
+
 def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
                title: str | None = None, cleanup_endpoint: str | None = None,
                cleanup_model: str | None = None, conf_floor: float = 0.80) -> tuple[Path, dict]:
@@ -180,7 +188,8 @@ def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
             # relies on the degeneracy guard + fidelity verifier instead.
             low_conf = conf is not None and conf < conf_floor
             if raw.strip() and not low_conf:
-                body, held = _cleaned_body(cfg, raw, use_llm, cleanup_endpoint, cleanup_model)
+                blocks = _page_blocks(project, stem)
+                body, held = _cleaned_body(cfg, raw, use_llm, cleanup_endpoint, cleanup_model, blocks)
                 if held:
                     counts["held"] += 1
                 docs.append(SpineDoc(idx, f"Page {page_no}", OutputMode.REFLOWABLE,
@@ -203,9 +212,14 @@ def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
 
 
 def _cleaned_body(cfg: Config, ocr_text: str, use_llm: bool,
-                  cleanup_endpoint: str | None = None, cleanup_model: str | None = None) -> tuple[str, bool]:
-    """Deterministic cleanup, optionally an LLM structure pass behind the verifier."""
-    deterministic = paragraphs_to_xhtml(layout.clean_page_text(ocr_text))
+                  cleanup_endpoint: str | None = None, cleanup_model: str | None = None,
+                  blocks: list | None = None) -> tuple[str, bool]:
+    """Deterministic cleanup, optionally an LLM structure pass behind the verifier.
+
+    When Surya layout blocks are present they drive the deterministic structure
+    (headings/lists/tables/reading order); otherwise fall back to paragraph-joining.
+    """
+    deterministic = blocks_to_xhtml(blocks) if blocks else paragraphs_to_xhtml(layout.clean_page_text(ocr_text))
     if not use_llm:
         return deterministic, False
     from .llm.cleanup import clean_page

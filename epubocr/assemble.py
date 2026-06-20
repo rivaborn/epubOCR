@@ -49,6 +49,39 @@ def paragraphs_to_xhtml(text: str) -> str:
     return "\n".join(f"<p>{html.escape(p)}</p>" for p in paras) or "<p></p>"
 
 
+def blocks_to_xhtml(blocks: list[dict]) -> str:
+    """Render Surya layout blocks (headings/paragraphs/lists/footnotes/tables) to XHTML."""
+    out: list[str] = []
+    pending_list: list[str] = []
+
+    def flush_list():
+        if pending_list:
+            out.append("<ul>" + "".join(f"<li>{html.escape(x)}</li>" for x in pending_list) + "</ul>")
+            pending_list.clear()
+
+    for b in blocks:
+        btype, text = b.get("type", "paragraph"), b.get("text", "")
+        if btype == "list":
+            pending_list.append(text)
+            continue
+        flush_list()
+        if btype == "heading":
+            lvl = min(max(int(b.get("level", 2)), 1), 6)
+            out.append(f"<h{lvl}>{html.escape(text)}</h{lvl}>")
+        elif btype == "footnote":
+            out.append(f'<aside epub:type="footnote"><p>{html.escape(text)}</p></aside>')
+        elif btype == "code":
+            out.append(f"<pre>{html.escape(text)}</pre>")
+        elif btype == "table":
+            out.append(b.get("html") or f'<div class="ocr-table"><p>{html.escape(text)}</p></div>')
+        elif btype == "figure":
+            continue
+        else:
+            out.append(f"<p>{html.escape(text)}</p>")
+    flush_list()
+    return "\n".join(out) or "<p></p>"
+
+
 _XHTML = (
     '<?xml version="1.0" encoding="utf-8"?>\n'
     '<!DOCTYPE html>\n'
