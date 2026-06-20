@@ -109,6 +109,39 @@ text for the ~88% of unreadable pages; and getting an EPUB back out (markdown �
 books, with epubocr's confidence-routing + facsimile-fallback layer on top** for pages too degraded to
 trust. For *This Town*, no tool rescues it; a cleaner source scan is the only real fix.
 
+## "Would a frontier model help?"
+
+Frontier multimodal models (Gemini 3 Pro, GPT-5, Claude Opus with vision) are genuinely **better
+readers** than local Surya / Qwen2.5-VL — they beat traditional OCR and small VLMs on hard conditions.
+So on the **faint-but-present** pages (the ~0.6–0.8 confidence band) one would likely read more
+correctly and could lift some pages from facsimile into reflowable. A real but **modest** gain — not a
+silver bullet, and it needs care:
+
+| Limitation                        | Effect on a faded scan                                                                          |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Still generative, no confidence   | On illegible ink it **confabulates** — *more fluently* than a small model. Trades "obviously garbled" for "fluent and wrong," the more dangerous failure (looks correct). |
+| No per-page confidence via API    | Loses the signal that drives facsimile routing — needs consensus / multi-sample checks to catch hallucination. |
+| The scan is the ceiling           | Ink not legibly present can't be recovered without inventing; ~88% of *This Town* is in that regime. |
+
+**Use it as a challenger and a cleanup engine, never the blind transcriber:**
+
+- **Consensus challenger** — trust a page only where Surya *and* the frontier model independently agree
+  (a stronger model raises the agreement ceiling and its confabulations won't match Surya). `consensus.py`
+  already supports this; pointing it at a frontier API is an endpoint change.
+- **Structure/cleanup pass behind the fidelity verifier** — frontier models excel at turning OCR text
+  into clean XHTML and detecting chapters/footnotes (not re-transcribing); the verifier bounds invention.
+  A clear win regardless of scan quality.
+- **Escalation tier** — send only borderline pages (Surya 0.6–0.8) to the frontier model and verify
+  against Surya: agree → reflowable, else facsimile. Cheap and targeted.
+
+**Costs:** cloud dependency (sends copyrighted scans off-box, breaks the fully-local property),
+per-page API cost, and latency.
+
+**Bottom line:** a frontier model recovers a *minority* of marginal pages and improves structure
+cleanup — worth a targeted escalation/cleanup tier — but it does **not** rescue the faded majority, and
+used naively as the transcriber it makes fidelity *worse* (fluent hallucination, no confidence). Best
+slotted in as a consensus challenger + cleanup engine, not the ground truth.
+
 ## Sources
 
 - [Best Open-Source PDF-to-Markdown Tools in 2026 (Marker vs Docling vs MinerU vs pdf-craft)](https://themenonlab.blog/blog/best-open-source-pdf-to-markdown-tools-2026)
