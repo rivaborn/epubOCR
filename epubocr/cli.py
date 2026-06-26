@@ -26,12 +26,12 @@ app = typer.Typer(add_completion=False, help="Fidelity-first OCR pipeline for im
 
 
 def _resolve_project(book: str, cfg):
-    """Accept either a book slug under projects_root or a path to an EPUB."""
+    """Accept either a book slug under projects_root or a path to an EPUB/PDF."""
     from .storage import BookProject
 
     p = Path(book)
     if p.exists() and p.is_file():
-        return BookProject.for_epub(p, cfg.projects_root)
+        return BookProject.for_source(p, cfg.projects_root)
     return BookProject(root=cfg.projects_root / book)
 
 
@@ -75,14 +75,22 @@ def endpoints():
 
 
 @app.command()
-def ingest(epub: Path = typer.Argument(..., exists=True, dir_okay=False)):
-    """Unpack an EPUB, classify spine pages, extract page images, write manifest.json."""
-    from .ingest import ingest as run_ingest
+def ingest(source: Path = typer.Argument(..., exists=True, dir_okay=False,
+                                         help="an image-only EPUB or a PDF")):
+    """Unpack an EPUB/PDF, classify pages, extract page images, write manifest.json."""
     from .storage import BookProject
 
     cfg = load_config()
-    project = BookProject.for_epub(epub, cfg.projects_root)
-    pages = run_ingest(epub, project)
+    project = BookProject.for_source(source, cfg.projects_root)
+    suffix = source.suffix.lower()
+    if suffix == ".pdf":
+        from .ingest_pdf import ingest_pdf as run_ingest
+    elif suffix == ".epub":
+        from .ingest import ingest as run_ingest
+    else:
+        typer.secho(f"unsupported input '{suffix}' (expected .epub or .pdf)", fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+    pages = run_ingest(source, project)
 
     counts: dict[str, int] = {}
     for p in pages:

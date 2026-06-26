@@ -201,13 +201,16 @@ def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
                                      ocr_text=raw.strip() or None))
                 counts["facsimile"] += 1
         elif ptype == "text":
-            body = _preserve_text_body(source_epub, page["href"]) if source_epub else "<p></p>"
+            # PDF born-digital text travels in the manifest; EPUB text is re-read from source.
+            body = page.get("text_html") or (
+                _preserve_text_body(source_epub, page["href"]) if source_epub else "<p></p>")
             docs.append(SpineDoc(idx, f"Page {page_no}", OutputMode.REFLOWABLE,
                                  page_number=page_no, body_xhtml=body))
             counts["preserved"] += 1
 
-    out_path = build_epub(docs, title=title or Path(manifest.get("epub", "book")).stem,
-                          output_path=project.output / "improved.epub")
+    out_path = build_epub(
+        docs, title=title or Path(manifest.get("epub") or manifest.get("source_file") or "book").stem,
+        output_path=project.output / "improved.epub")
     return out_path, {"docs": len(docs), **counts}
 
 

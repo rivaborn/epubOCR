@@ -41,8 +41,9 @@ text_xhtml     = "qwen2.5-coder:32b"
 
 # OCR engine default (laptop). One of: tesseract | surya | paddle | vlm.
 [ocr]
-default_engine = "surya"                             # fidelity-grade: confidence + reading order on the 4060
+default_engine = "surya"                             # local Surya 0.17 (per-line confidence + reading order on the 4060)
 layout         = false                               # opt-in: extract headings/lists/tables/reading order (Surya layout)
+surya2_backend = "llamacpp"                          # backend for the optional 'surya2' engine (Surya 2, >=0.20): llamacpp | vllm
 
 # Fidelity verifier thresholds (§7). A cleaned page that drifts past these is held for QA.
 [fidelity]

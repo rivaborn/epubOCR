@@ -12,21 +12,22 @@ and where this project sits relative to them. Compiled June 2026.
 - **Searchable facsimile** — keep the page image, add an invisible/hidden **OCR text layer** under it.
 - **E-book conversion** — produce an actual **EPUB** (reflowable or fixed-layout).
 
-`epubocr` is specifically **image-only EPUB → improved EPUB**, choosing *per page* between reflowable
-text and searchable facsimile based on OCR confidence — a niche most tools don't target.
+`epubocr` specifically produces an **improved EPUB from an image-only EPUB *or PDF***, choosing *per
+page* between reflowable text and searchable facsimile based on OCR confidence — a niche most tools
+don't target.
 
 ## Landscape at a glance
 
-| Project              | Input → Output                 | OCR / engine            | Focus                                  | Confidence→facsimile fallback |
-| -------------------- | ------------------------------ | ----------------------- | -------------------------------------- | ----------------------------- |
-| **pdf-craft**        | scanned PDF → EPUB / Markdown  | DeepSeek-OCR (local)    | **scanned books** → EPUB (auto-TOC)    | No — commits to clean output  |
-| **OCRmyPDF**         | scanned PDF → searchable PDF   | Tesseract               | **searchable facsimile** (lossless)    | Facsimile-only (no reflow)    |
-| **Marker**           | PDF/image/EPUB → Markdown/JSON | **Surya**               | fast, general doc parsing              | No                            |
-| **docling** (IBM)    | PDF/DOCX/HTML → DoclingDocument| layout + VLM            | modular parsing, RAG                   | No                            |
-| **MinerU**           | PDF/Office → Markdown/JSON     | PP-OCR + VLM            | broad hardware, CJK, agentic           | No                            |
-| **olmOCR** (AllenAI) | PDF → linearized text          | Qwen2.5-VL fine-tune    | document linearization                 | No                            |
-| **Calibre**          | many → EPUB (+OCR via plugins) | external (Tesseract)    | general e-book conversion              | No                            |
-| **epubocr** (this)   | **image-only EPUB → EPUB**     | Surya + VLM challenger  | **fidelity-first per-page routing**    | **Yes — the core idea**       |
+| Project              | Input → Output                  | OCR / engine           | Focus                               | Confidence→facsimile fallback |
+| -------------------- | ------------------------------- | ---------------------- | ----------------------------------- | ----------------------------- |
+| **pdf-craft**        | scanned PDF → EPUB / Markdown   | DeepSeek-OCR (local)   | **scanned books** → EPUB (auto-TOC) | No — commits to clean output  |
+| **OCRmyPDF**         | scanned PDF → searchable PDF    | Tesseract              | **searchable facsimile** (lossless) | Facsimile-only (no reflow)    |
+| **Marker**           | PDF/image/EPUB → Markdown/JSON  | **Surya**              | fast, general doc parsing           | No                            |
+| **docling** (IBM)    | PDF/DOCX/HTML → DoclingDocument | layout + VLM           | modular parsing, RAG                | No                            |
+| **MinerU**           | PDF/Office → Markdown/JSON      | PP-OCR + VLM           | broad hardware, CJK, agentic        | No                            |
+| **olmOCR** (AllenAI) | PDF → linearized text           | Qwen2.5-VL fine-tune   | document linearization              | No                            |
+| **Calibre**          | many → EPUB (+OCR via plugins)  | external (Tesseract)   | general e-book conversion           | No                            |
+| **epubocr** (this)   | **image EPUB/PDF → EPUB**       | Surya + VLM challenger | **fidelity-first per-page routing** | **Yes — the core idea**       |
 
 ## Closest in spirit
 
@@ -67,8 +68,10 @@ is essentially the production version of that same approach.
 ## Where `epubocr` fits
 
 **Distinctive:**
-- **Image-only EPUB → improved EPUB** specifically — most tools are PDF-in. Image-EPUBs are a real
-  niche (Internet Archive / Calibre exports, comics, photo books).
+- **Improved EPUB from an image-only EPUB *or* PDF** — it now accepts PDF input too (born-digital text
+  preserved, scanned pages lossless-extracted/rendered and OCR'd), but unlike the PDF-in markdown
+  pipelines the output is a **per-page-routed EPUB**, not markdown. Image-EPUBs remain a niche most
+  tools ignore (Internet Archive / Calibre exports, comics, photo books).
 - **Fidelity-first per-page routing** — OCR confidence + cross-engine **consensus** decide
   reflowable-vs-facsimile, with a facsimile fallback when the scan is too faded. The markdown pipelines
   assume a recoverable source and don't fall back; on a degraded scan they hallucinate (as we observed

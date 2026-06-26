@@ -45,13 +45,17 @@ class SpinePage:
     text_len: int
     images: list[str] = field(default_factory=list)            # source image hrefs (0 or 1)
     extracted_images: list[str] = field(default_factory=list)  # pages/ filenames (0 or 1)
+    text_html: str | None = None                               # preserved born-digital text (PDF)
 
     def to_json(self) -> dict:
-        return {
+        d = {
             "index": self.index, "idref": self.idref, "href": self.href,
             "type": self.page_type.value, "text_len": self.text_len,
             "images": self.images, "extracted_images": self.extracted_images,
         }
+        if self.text_html is not None:
+            d["text_html"] = self.text_html
+        return d
 
 
 def _localname(tag) -> str:

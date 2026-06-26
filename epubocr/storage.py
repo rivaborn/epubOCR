@@ -24,8 +24,13 @@ class BookProject:
     root: Path
 
     @classmethod
-    def for_epub(cls, epub_path: Path, projects_root: Path) -> "BookProject":
-        return cls(root=projects_root / _slug(Path(epub_path).stem))
+    def for_source(cls, source_path: Path, projects_root: Path) -> "BookProject":
+        """Project folder for an input file (EPUB or PDF), slugged from its stem."""
+        return cls(root=projects_root / _slug(Path(source_path).stem))
+
+    @classmethod
+    def for_epub(cls, epub_path: Path, projects_root: Path) -> "BookProject":  # back-compat alias
+        return cls.for_source(epub_path, projects_root)
 
     # -- subdirectories (mirror epubOCR.md §10) --------------------------
     @property

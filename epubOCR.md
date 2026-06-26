@@ -1,6 +1,6 @@
-# epubocr — a fidelity-first OCR pipeline for image-only EPUBs
+# epubocr — a fidelity-first OCR pipeline for image-only EPUBs and PDFs
 
-Many EPUBs are just scanned page images wrapped in XHTML. `epubocr` turns them into improved
+Many EPUBs — and PDFs — are just scanned page images. `epubocr` turns them into improved
 EPUBs where **OCR is the source of truth** and any LLM/VLM only restructures the text — it never
 re-transcribes the image. The design is **fidelity-first** (faithful text beats pretty text),
 **measurable** (an eval harness decides engine/prompt choices), and **cache-first** (every stage is
@@ -9,11 +9,15 @@ reversible and re-runnable).
 It runs across two machines: a laptop does the CPU/IO work plus local OCR; an optional GPU host
 serves a VLM and an LLM over OpenAI-compatible HTTP endpoints.
 
+Input is an image-only **EPUB or PDF**. The PDF front-end (`ingest_pdf.py`, PyMuPDF) emits the same
+per-page manifest the EPUB path does — preserving any born-digital text layer and OCR-ing only the
+scanned pages — so every stage after ingest is unchanged. (PyMuPDF is AGPL-3.0; it's an opt-in extra.)
+
 ## Pipeline
 
 ```text
-EPUB
-  ↓ unpack + inspect spine/manifest (zipfile + lxml)
+EPUB / PDF
+  ↓ unpack to a common page manifest (EPUB: zipfile + lxml; PDF: PyMuPDF) — source-agnostic downstream
   ↓ classify pages, flatten to one entry per page image (handles many-images-per-doc scans)
   ↓ extract page images in reading order  → hash + dedup
   ↓ preprocess (adaptive, measured — not a fixed chain)
@@ -59,14 +63,22 @@ never the blind default. Traditional OCR transcribes pixels deterministically: i
 characters (detectable, and it reports low confidence). A generative VLM instead produces fluent,
 plausible **hallucinations** — the dangerous failure mode.
 
-| Engine        | Where    | Strengths                                | Watch-outs                                       |
-| ------------- | -------- | ---------------------------------------- | ------------------------------------------------ |
-| **Surya**     | Laptop   | Layout, reading order, tables, **confidence** | RAIL-M model license; tune batch size for ≤8 GB |
-| Tesseract     | Laptop   | Trivial CPU baseline                     | Weak on complex layout / faint scans             |
-| PaddleOCR     | Laptop   | Fast, light, Apache-2.0                  | Windows CUDA-wheel friction                      |
-| Qwen2.5-VL    | GPU host | Hard pages, structure understanding      | Confabulates on faint text → verifier required   |
+| Engine               | Where    | Strengths                                                 | Watch-outs                                                     |
+| -------------------- | -------- | --------------------------------------------------------- | -------------------------------------------------------------- |
+| **Surya** (default)  | Laptop   | Local 0.17; layout, reading order, tables, **confidence** | RAIL-M model license; tune batch size for ≤8 GB                |
+| **Surya 2** (opt-in) | Backend  | Stronger unified 0.20 model; tables, structure            | Served VLM (vllm/llama.cpp) — needs a backend; can confabulate |
+| Tesseract            | Laptop   | Trivial CPU baseline                                      | Weak on complex layout / faint scans                           |
+| PaddleOCR            | Laptop   | Fast, light, Apache-2.0                                   | Windows CUDA-wheel friction                                    |
+| Qwen2.5-VL           | GPU host | Hard pages, structure understanding                       | Confabulates on faint text → verifier required                 |
 
 All sit behind an `OCREngine` interface so the eval harness compares them on equal footing.
+
+**Surya 2** (`surya-ocr` ≥0.20) is available as the opt-in **`surya2`** engine — a single served VLM
+(vllm or llama.cpp backend) rather than the local 0.17 models. It is more capable on clean documents
+but *generative* (no per-line confidence), so the pipeline treats it like the VLM challenger, not the
+ground-truth default — and it needs a backend, so the local Surya stays the default. The two are the
+same `surya-ocr` package at incompatible versions (0.17.x vs ≥0.20), installed via the mutually
+exclusive `surya` / `surya2` extras.
 
 **Observed in practice (faded scans):** the VLM produced fluent prose with *invented* proper nouns
 (confident and wrong, no confidence signal); Surya produced garbled text with a **low confidence
@@ -107,6 +119,7 @@ print pagination via a `page-list` nav and inline `epub:type="pagebreak" role="d
 epubocr/
   config.py     # endpoints, per-endpoint model aliases, thresholds (prefers config.local.toml)
   ingest.py     # zipfile + lxml; per-image page model + classification
+  ingest_pdf.py # PDF front-end (PyMuPDF): same manifest; preserve text layers, extract/render scans
   preprocess.py # adaptive Pillow/OpenCV steps
   ocr/          # OCREngine interface + surya, tesseract, paddle, vlm_openai engines
   llm/          # OpenAI-compatible client + cleanup passes + fidelity_verifier
@@ -124,8 +137,9 @@ epubocr/
 ```bash
 uv sync                                   # core deps (Python 3.12)
 uv sync --extra surya                     # add Surya (pulls torch; --torch-backend=auto for CUDA)
+uv sync --extra pdf                       # PDF input (PyMuPDF; AGPL-3.0)
 
-uv run epubocr ingest path/to/book.epub   # → extracted/manifest.json, page images
+uv run epubocr ingest path/to/book.epub   # (or book.pdf) → extracted/manifest.json, page images
 uv run epubocr ocr  <book>                # OCR image pages (default engine: surya)
 uv run epubocr eval <book> --gold g.json --engines surya,vlm    # compare engines on a gold set
 uv run epubocr build <book> [--llm]       # assemble the improved EPUB (--llm runs cleanup)
@@ -137,7 +151,7 @@ Per book, an intermediate `book_projects/<book>/` holds `source/`, `extracted/`,
 
 ## Status
 
-Working end-to-end: ingest + classification (incl. many-images-per-document scans), Surya and
+Working end-to-end: ingest + classification of EPUB **and PDF** input (incl. many-images-per-document scans), Surya and
 VLM-OCR engines, the eval harness, deterministic + LLM cleanup with the fidelity verifier, and
 per-page adaptive EPUB assembly with a page-list nav. EPUBCheck validation requires a JRE; Tesseract
 and Paddle engines require their extras. The VLM remains a structure aid and challenger, not the

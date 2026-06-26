@@ -1,11 +1,11 @@
 # epubocr
 
-**A fidelity-first OCR pipeline that turns image-only (scanned) EPUBs into improved, reflowable
-EPUBs — without letting an LLM hallucinate the text.**
+**A fidelity-first OCR pipeline that turns image-only (scanned) EPUBs and PDFs into improved,
+reflowable EPUBs — without letting an LLM hallucinate the text.**
 
-Many EPUBs are just page scans wrapped in XHTML. `epubocr` re-OCRs them with **OCR as the source of
-truth**, uses an LLM only to *restructure* (never to re-transcribe), and falls back to the original
-page image wherever it isn't confident.
+Many EPUBs (and PDFs) are just page scans. `epubocr` re-OCRs the scanned pages with **OCR as the
+source of truth**, uses an LLM only to *restructure* (never to re-transcribe), preserves any real
+(born-digital) text it finds, and falls back to the original page image wherever it isn't confident.
 
 ## Why fidelity-first?
 
@@ -25,8 +25,8 @@ of trusting them.
 
 ## Features
 
-- **Pluggable OCR engines** behind one interface — Surya (default), Qwen2.5-VL via an
-  OpenAI-compatible endpoint, Tesseract, PaddleOCR.
+- **Pluggable OCR engines** behind one interface — Surya (default, local), Qwen2.5-VL via an
+  OpenAI-compatible endpoint, Tesseract, PaddleOCR, and **Surya 2** (opt-in, served-VLM backend).
 - **Eval harness** — CER / WER / insertion against a small gold set picks the engine empirically,
   not by opinion.
 - **Fidelity verifier** — holds any LLM cleanup that drifts from the OCR ground truth (char
@@ -37,15 +37,19 @@ of trusting them.
 - **Cache-first** — every stage keyed on `content + params + model + prompt-version`; re-runs only
   redo what changed.
 - Handles both EPUB shapes: one-XHTML-wrapper-per-image, and many-images-per-document scans.
+- **PDF input too** (`--extra pdf`) — born-digital text layers are preserved; scanned pages are
+  lossless-extracted (or rendered at 300 DPI) and OCR'd. Same source-agnostic pipeline, same EPUB out.
 
 ## Quick start
 
 ```bash
 uv sync                            # core deps (Python 3.12)
-uv sync --extra surya              # Surya engine (pulls torch; UV_TORCH_BACKEND/--torch-backend=auto for CUDA)
+uv sync --extra surya              # Surya engine (local 0.17; pulls torch; --torch-backend=auto for CUDA)
+#  ...or `--extra surya2` for Surya 2 (>=0.20, served-VLM — needs a vllm/llama.cpp backend; not both)
+uv sync --extra pdf                # PDF input (PyMuPDF — note: AGPL-3.0)
 cp config.toml config.local.toml   # set your real LLM/VLM endpoints here (only needed for VLM/LLM stages)
 
-uv run epubocr ingest book.epub    # → book_projects/book/extracted/manifest.json + page images
+uv run epubocr ingest book.epub    # (or book.pdf) → book_projects/book/extracted/manifest.json + page images
 uv run epubocr ocr   book          # OCR image pages (default engine: surya)
 uv run epubocr build book          # → book_projects/book/output/improved.epub
 ```
@@ -69,7 +73,8 @@ OCR is ground truth; the LLM only restructures; every stage is cacheable and rev
 
 - **Python 3.12** (PyTorch has no CUDA wheels for 3.14).
 - Optional: a GPU host serving **Ollama** and/or **vLLM** (OpenAI-compatible) for VLM-OCR and LLM
-  cleanup; a **JRE** for EPUBCheck; the `ocr-local` (Tesseract) or `paddle` extras for those engines.
+  cleanup; a **JRE** for EPUBCheck; the `ocr-local` (Tesseract) or `paddle` extras for those engines;
+  the `pdf` extra (**PyMuPDF — AGPL-3.0**) for PDF input.
 
 ## Status
 

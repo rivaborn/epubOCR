@@ -5,12 +5,12 @@ description = "Fidelity-first OCR pipeline that improves image-only EPUBs (see e
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "typer>=0.12",        # CLI
-    "lxml>=5.2",          # OPF/XHTML parsing on ingest
+    "typer>=0.15",        # CLI
+    "lxml>=5.3",          # OPF/XHTML parsing on ingest
     "ebooklib>=0.20",     # EPUB3 build on assemble
-    "pillow>=10.3",       # image handling / hashing
-    "openai>=1.40",       # OpenAI-compatible client for the 3090 endpoints
-    "rapidfuzz>=3.9",     # alignment / CER-WER / fidelity verifier
+    "pillow>=10.4",       # image handling / hashing
+    "openai>=1.40",       # OpenAI-compatible client for the endpoints (works with the 2.x SDK too)
+    "rapidfuzz>=3.10",    # alignment / CER-WER / fidelity verifier
 ]
 
 # Heavy GPU/OCR backends are opt-in so the core CLI installs light and fast.
@@ -24,10 +24,23 @@ ocr-local = [
     "numpy>=1.26",
 ]
 surya = [
-    "surya-ocr>=0.16",    # detection+recognition+layout; pulls torch — install deliberately
+    # Local Surya 0.17.x — runs detection + recognition + layout models on-box, with per-line
+    # confidence. Pinned <0.18 on purpose: 0.20 ("Surya 2") drops the local models for a
+    # vllm/llama.cpp backend (see the 'surya2' extra). Pulls torch — install deliberately.
+    "surya-ocr>=0.17,<0.18",
+]
+surya2 = [
+    # "Surya 2" (>=0.20): a served-VLM OCR engine that NEEDS a backend (vllm on NVIDIA, or
+    # llama.cpp). Mutually exclusive with 'surya' — same package, incompatible majors; declared
+    # in [tool.uv].conflicts so uv locks them separately. Opt-in; the local 'surya' stays default.
+    "surya-ocr>=0.20",
 ]
 paddle = [
     "paddleocr>=3.0",
+]
+pdf = [
+    "pymupdf>=1.24",      # PDF ingest: text-layer extraction + image extraction + render.
+                          # NOTE: PyMuPDF is AGPL-3.0 — distributing with it pulls in copyleft.
 ]
 
 [project.scripts]
@@ -43,3 +56,12 @@ packages = ["epubocr"]
 [tool.uv]
 # Keep heavy extras out of the default lock/sync; opt in per the comments above.
 package = true
+
+# 'surya' (local 0.17.x) and 'surya2' (Surya 2, >=0.20) are the same package at incompatible
+# versions — declare them conflicting so uv locks each separately instead of failing to resolve.
+conflicts = [
+    [
+        { extra = "surya" },
+        { extra = "surya2" },
+    ],
+]

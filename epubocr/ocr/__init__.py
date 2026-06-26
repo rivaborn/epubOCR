@@ -22,7 +22,12 @@ def get_engine(name: str, config: Config) -> OCREngine:
     if name in ("surya", "marker"):
         from .surya_marker import SuryaEngine
         return SuryaEngine(layout=bool(config.raw.get("ocr", {}).get("layout", False)))
+    if name == "surya2":
+        from .surya2 import Surya2Engine
+        ocr_cfg = config.raw.get("ocr", {})
+        return Surya2Engine(backend=ocr_cfg.get("surya2_backend", "llamacpp"),
+                            layout=bool(ocr_cfg.get("layout", False)))
     if name == "paddle":
         from .paddle import PaddleEngine
         return PaddleEngine()
-    raise ValueError(f"unknown OCR engine '{name}' (tesseract|surya|paddle|vlm)")
+    raise ValueError(f"unknown OCR engine '{name}' (tesseract|surya|surya2|paddle|vlm)")

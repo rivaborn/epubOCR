@@ -33,6 +33,14 @@ class SuryaEngine(OCREngine):
     def _ensure_loaded(self) -> None:
         if self._rec is not None:
             return
+        import importlib.metadata as _md
+        _ver = _md.version("surya-ocr")
+        if tuple(int(x) for x in _ver.split(".")[:2]) >= (0, 18):
+            raise RuntimeError(
+                f"the 'surya' engine needs surya-ocr 0.17.x (local models); installed {_ver}. "
+                f"Install the 'surya' extra (`uv sync --extra surya`), or use engine 'surya2' "
+                f"for Surya 2 (the served-VLM architecture, >=0.20)."
+            )
         import torch
         from surya.detection import DetectionPredictor
         from surya.foundation import FoundationPredictor

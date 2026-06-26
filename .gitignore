@@ -9,6 +9,8 @@ __pycache__/
 book_projects/
 *.epub
 !tests/fixtures/*.epub
+*.pdf
+!tests/fixtures/*.pdf
 
 # tooling
 epubcheck*.jar
