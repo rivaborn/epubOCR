@@ -27,7 +27,9 @@ def get_engine(name: str, config: Config) -> OCREngine:
         ocr_cfg = config.raw.get("ocr", {})
         return Surya2Engine(backend=ocr_cfg.get("surya2_backend", "llamacpp"),
                             layout=bool(ocr_cfg.get("layout", False)),
-                            max_tokens=int(ocr_cfg.get("surya2_max_tokens", _FULL_PAGE_TOKEN_CAP)))
+                            max_tokens=int(ocr_cfg.get("surya2_max_tokens", _FULL_PAGE_TOKEN_CAP)),
+                            inference_url=ocr_cfg.get("surya2_inference_url") or None,
+                            model=ocr_cfg.get("surya2_model") or None)
     if name == "paddle":
         from .paddle import PaddleEngine
         return PaddleEngine()

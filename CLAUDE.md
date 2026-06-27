@@ -124,8 +124,13 @@ the default build run fully local.
   `[ocr] layout`) adds structured blocks but degrades on faded scans (`structure.build_blocks` walks
   lines in reading order, degrading gracefully to paragraph-joining). Strips inline `<b>`/`<i>`/`<math>`.
 - **Two Surya engines, mutually exclusive; `surya2` is the default.** `surya2` (`surya2.Surya2Engine`)
-  = **Surya 2 (≥0.20)**, a served-VLM needing a vllm/llama.cpp backend (`[ocr] surya2_backend` + a
-  `llama-server` binary via `LLAMA_CPP_BINARY`, or a vLLM endpoint). It is the default on **fidelity**
+  = **Surya 2 (≥0.20)**, a served-VLM needing a vllm/llama.cpp backend (`[ocr] surya2_backend`). Two
+  ways to feed it: a local `llama-server` binary via `LLAMA_CPP_BINARY` (offline, on the 4060), or —
+  the validated default on this setup — `surya2_backend = "vllm"` + `surya2_inference_url` +
+  `surya2_model` to **attach** to an already-running vLLM (the homelab 3090 relay serves `surya-ocr-2`;
+  load it with `llmconfig load vllm surya2`). Surya's attach path rejects a served-name mismatch, so
+  `surya2_model` must equal the server's `--served-model-name`. The vLLM path is faster per page and
+  reads at full bf16 precision; the engine sets these on Surya's settings singleton in `_ensure_loaded`. It is the default on **fidelity**
   grounds — validated on a real 1965 scan it matched/beat 0.17 on clean prose, was cleaner on marginal
   pages, and returned **empty (not hallucinated)** text on unreadable pages — but it is **~6-10x slower**
   (autoregressive) and reports a real per-block confidence (so the conf floor applies; the earlier

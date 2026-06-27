@@ -74,12 +74,17 @@ class Surya2Engine(OCREngine):
     wants_preprocess = False  # the VLM reads the raw page
 
     def __init__(self, backend: str | None = "llamacpp", layout: bool = False,
-                 max_tokens: int | None = _FULL_PAGE_TOKEN_CAP):
+                 max_tokens: int | None = _FULL_PAGE_TOKEN_CAP,
+                 inference_url: str | None = None, model: str | None = None):
         self._rec = None
         self._manager = None
         self._backend = backend          # "llamacpp" | "vllm" | None (let Surya autodetect)
         self._layout = layout
         self._max_tokens = max_tokens    # full-page generation ceiling (runaway guard)
+        # vllm backend: attach to an already-running server (e.g. the homelab 3090 relay)
+        # instead of spawning Docker. `model` must equal that server's served name.
+        self._inference_url = inference_url
+        self._model = model
 
     def identity(self) -> str:
         try:
@@ -106,6 +111,12 @@ class Surya2Engine(OCREngine):
             # bounds a runaway on an unreadable page without truncating any real page.
             if self._max_tokens:
                 _surya_settings.SURYA_MAX_TOKENS_FULL_PAGE = int(self._max_tokens)
+            # vllm backend: point at an already-running server (no Docker spawn). Surya's
+            # attach path requires the server's served model id to equal this checkpoint.
+            if self._inference_url:
+                _surya_settings.SURYA_INFERENCE_URL = self._inference_url
+            if self._model:
+                _surya_settings.SURYA_MODEL_CHECKPOINT = self._model
             # The backend (and model load) only engages on the first OCR call.
             self._manager = SuryaInferenceManager(method=self._backend)
             self._rec = RecognitionPredictor(self._manager)

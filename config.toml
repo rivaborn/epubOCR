@@ -51,6 +51,11 @@ default_engine = "surya2"                            # Surya 2 served-VLM; needs
 layout         = false                               # opt-in: extract headings/lists/tables/reading order (Surya layout)
 surya2_backend = "llamacpp"                          # backend for the 'surya2' engine: llamacpp | vllm
 surya2_max_tokens = 6144                             # full-page generation cap (runaway guard); real pages stay well under
+# vllm backend: attach to an already-running OpenAI-compatible vLLM server (no local
+# binary). Point at the IP literal, not localhost. The model name MUST equal that
+# server's served name (Surya's attach path rejects a mismatch).
+# surya2_inference_url = "http://127.0.0.1:11437/v1"   # set surya2_backend = "vllm" to use this
+# surya2_model         = "surya-ocr-2"                  # the server's --served-model-name
 
 # Fidelity verifier thresholds (§7). A cleaned page that drifts past these is held for QA.
 [fidelity]
