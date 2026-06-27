@@ -51,7 +51,8 @@ default_engine = "surya2"                            # Surya 2 served-VLM; needs
 layout         = false                               # opt-in: extract headings/lists/tables/reading order (Surya layout)
 surya2_backend = "llamacpp"                          # backend for the 'surya2' engine: llamacpp | vllm
 surya2_max_tokens = 6144                             # full-page generation cap (runaway guard); real pages stay well under
-# surya2_parallel = 8                                # concurrent requests per batched OCR call (raise toward the server's headroom)
+# surya2_parallel = 32                               # concurrent requests per batched OCR call. Measured on a 3090: ~1.8x
+#                                                    #   over 8; plateau 24-48 (knee ~24), 64 regresses. Tune to your server.
 # vllm backend: attach to an already-running OpenAI-compatible vLLM server (no local
 # binary). Point at the IP literal, not localhost. The model name MUST equal that
 # server's served name (Surya's attach path rejects a mismatch).
