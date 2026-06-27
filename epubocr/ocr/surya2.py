@@ -75,7 +75,8 @@ class Surya2Engine(OCREngine):
 
     def __init__(self, backend: str | None = "llamacpp", layout: bool = False,
                  max_tokens: int | None = _FULL_PAGE_TOKEN_CAP,
-                 inference_url: str | None = None, model: str | None = None):
+                 inference_url: str | None = None, model: str | None = None,
+                 parallel: int | None = None):
         self._rec = None
         self._manager = None
         self._backend = backend          # "llamacpp" | "vllm" | None (let Surya autodetect)
@@ -85,6 +86,9 @@ class Surya2Engine(OCREngine):
         # instead of spawning Docker. `model` must equal that server's served name.
         self._inference_url = inference_url
         self._model = model
+        # Concurrent requests Surya fires per batched call (SURYA_INFERENCE_PARALLEL,
+        # default 8). Higher exploits more of the server's batching headroom.
+        self._parallel = parallel
 
     def identity(self) -> str:
         try:
@@ -117,6 +121,8 @@ class Surya2Engine(OCREngine):
                 _surya_settings.SURYA_INFERENCE_URL = self._inference_url
             if self._model:
                 _surya_settings.SURYA_MODEL_CHECKPOINT = self._model
+            if self._parallel:
+                _surya_settings.SURYA_INFERENCE_PARALLEL = int(self._parallel)
             # The backend (and model load) only engages on the first OCR call.
             self._manager = SuryaInferenceManager(method=self._backend)
             self._rec = RecognitionPredictor(self._manager)
@@ -128,13 +134,21 @@ class Surya2Engine(OCREngine):
             ) from exc
 
     def run(self, image_path: Path) -> OcrResult:
+        return self.run_batch([image_path])[0]
+
+    def run_batch(self, image_paths: list[Path]) -> list[OcrResult]:
+        """OCR a chunk of pages in one call. Surya's RecognitionPredictor fires the
+        requests concurrently (``SURYA_INFERENCE_PARALLEL`` workers) and the server
+        continuous-batches them — the throughput win over one-page-at-a-time."""
         from PIL import Image
 
-        from ..structure import _plain
-
         self._ensure_loaded()
-        img = Image.open(image_path).convert("RGB")
-        page = self._rec([img], full_page=True)[0]          # PageOCRResult
+        images = [Image.open(p).convert("RGB") for p in image_paths]
+        pages = self._rec(images, full_page=True)            # List[PageOCRResult], in order
+        return [self._page_to_result(pg) for pg in pages]
+
+    def _page_to_result(self, page) -> OcrResult:
+        from ..structure import _plain
 
         blocks = sorted(getattr(page, "blocks", []), key=lambda b: getattr(b, "reading_order", 0))
         texts: list[str] = []

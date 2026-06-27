@@ -29,7 +29,8 @@ def get_engine(name: str, config: Config) -> OCREngine:
                             layout=bool(ocr_cfg.get("layout", False)),
                             max_tokens=int(ocr_cfg.get("surya2_max_tokens", _FULL_PAGE_TOKEN_CAP)),
                             inference_url=ocr_cfg.get("surya2_inference_url") or None,
-                            model=ocr_cfg.get("surya2_model") or None)
+                            model=ocr_cfg.get("surya2_model") or None,
+                            parallel=int(ocr_cfg["surya2_parallel"]) if ocr_cfg.get("surya2_parallel") else None)
     if name == "paddle":
         from .paddle import PaddleEngine
         return PaddleEngine()

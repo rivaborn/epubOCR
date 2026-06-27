@@ -63,7 +63,7 @@ ingest → preprocess → ocr → (eval gate) → layout cleanup → llm cleanup
 | `layout.py`                 | Deterministic cleanup: de-hyphenate, rejoin paragraphs, strip running heads/footers            |
 | `llm/`                      | OpenAI-compatible `client`, `cleanup` passes, and the `fidelity_verifier`                      |
 | `assemble.py`               | Per-page reflowable/facsimile XHTML → EPUB3 via EbookLib (`page-list` nav, pagebreak anchors)  |
-| `pipeline.py`               | `ocr_book` and `build_book` — the stage orchestration the CLI calls                            |
+| `pipeline.py`               | `ocr_book` (batches cache-misses via `engine.run_batch`) and `build_book` — orchestration       |
 | `eval/`                     | `metrics` (CER/WER/insertion/repetition) + `harness` (engine comparison table)                 |
 | `consensus.py`              | Cross-engine agreement — a model-agnostic trust signal                                         |
 | `storage.py`                | `BookProject` folder layout + the content-addressed `cache_key`                                |
@@ -141,6 +141,13 @@ the default build run fully local.
   (cache-stable — don't make it report the patch). Both are the same `surya-ocr` package at incompatible
   versions, so only one installs at a time (`[tool.uv].conflicts` locks them separately); each engine
   version-guards with a clear error.
+- **Batched OCR (whole-book throughput).** `ocr_book` is 3-pass: build the page work-list + cache keys,
+  `engine.run_batch` the cache-misses in chunks of `_OCR_BATCH` (32), then per-page write + degeneracy
+  guard in spine order. `OCREngine.run_batch` defaults to sequential (`run` per page); `surya2`/`surya`
+  override it to hand the whole chunk to one `RecognitionPredictor` call — Surya fans those out
+  concurrently (`SURYA_INFERENCE_PARALLEL`, `[ocr] surya2_parallel`, default 8) and the vLLM server
+  continuous-batches them. The win is for the served-VLM path (one HTTP round-trip per page was the wall);
+  caching/`--force`/`--limit`/routing are unchanged. `run` is now just `run_batch([path])[0]`.
 - **Windows console:** `cli.py` reconfigures stdout/stderr to UTF-8 (book text has em-dashes/ligatures
   that crash the cp1252 default). Keep CLI output ASCII-safe where practical (`->` not `→`).
 - **PDF input** (`ingest_pdf.py`, opt-in `pdf` extra → **PyMuPDF, AGPL-3.0**): a page with a real text
