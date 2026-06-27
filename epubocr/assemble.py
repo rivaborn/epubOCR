@@ -101,6 +101,10 @@ def _doc_xhtml(doc: SpineDoc, lang: str, image_filename: str | None) -> str:
         body = (f'{anchor}<section epub:type="page">'
                 f'<img src="images/{image_filename}" alt="{html.escape(doc.title)}" '
                 f'style="max-width:100%;"/>{hidden}</section>')
+    elif doc.mode is OutputMode.FACSIMILE and doc.ocr_text:
+        # Facsimile requested but the page image is unavailable — show the OCR text as
+        # visible prose rather than emit a silent blank page.
+        body = f'{anchor}<section>{paragraphs_to_xhtml(doc.ocr_text)}</section>'
     else:
         body = f'{anchor}<section>{doc.body_xhtml or "<p></p>"}</section>'
     return _XHTML.format(lang=lang, title=html.escape(doc.title), body=body)

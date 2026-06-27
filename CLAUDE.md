@@ -74,9 +74,11 @@ source-agnostic.** `ingest.py` flattens **two** EPUB shapes into one ordered pag
 wrapper per page image (converter output), and (b) one XHTML embedding many images (Calibre /
 Internet-Archive scans). `ingest_pdf.py` (PyMuPDF) emits the **same** `manifest.json` from a PDF —
 born-digital pages → `text` (the real text layer preserved in a `text_html` manifest field), image
-pages → `image`. Pages are classified `text | image | mixed | cover | empty`; only `image/mixed/cover`
-get OCR'd. OCR, the guards, per-page routing, and EPUB assembly never look at the original container,
-so the PDF path reuses them unchanged.
+pages → `image`. Pages are classified `text | image | mixed | cover | empty`; only `image/cover`
+get OCR'd — a `mixed` page (real text + a figure) keeps no extracted image, so it is **preserved as
+text** in `build_book` (real text beats OCR), not routed through the OCR'er (which would blank it).
+OCR, the guards, per-page routing, and EPUB assembly never look at the original container, so the PDF
+path reuses them unchanged.
 
 **Fidelity is enforced by three distinct guards at different stages — do not conflate them:**
 1. **OCR-stage degeneracy guard** (`eval/metrics.is_degenerate` via `repetition_ratio`, applied in

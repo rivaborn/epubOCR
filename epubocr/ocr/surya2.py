@@ -171,7 +171,10 @@ class Surya2Engine(OCREngine):
             meta["blocks"] = [bj for bj in (_block_json(b) for b in blocks) if bj]
 
         return OcrResult(
-            text="\n".join(texts),
+            # Blank line between blocks so the deterministic paragraph rejoin (which keys on
+            # blank-line boundaries) keeps one <p> per layout block instead of collapsing the
+            # whole page into a single paragraph. Within-block lines stay '\n'-joined upstream.
+            text="\n\n".join(texts),
             words=words,
             mean_conf=(sum(confs) / len(confs) if confs else None),
             engine=self.name,

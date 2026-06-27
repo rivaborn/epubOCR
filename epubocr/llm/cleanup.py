@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from lxml import etree
+
 from ..config import Config
 from .client import LLMClient
 from .fidelity_verifier import Verdict, verify
@@ -22,6 +24,27 @@ PAGE_CLEANUP_PROMPT = (
 )
 
 PROMPT_VERSION = "page-cleanup-1"
+
+
+def _wellformed_xhtml(fragment: str) -> str | None:
+    """Re-serialize an LLM XHTML fragment as well-formed XML, recovering from minor markup
+    errors (a stray ``&``, an unclosed tag, ``<br>`` for ``<br/>``).
+
+    ``assemble`` writes page XHTML verbatim (raw ``EpubItem``), and the fidelity verifier
+    only compares stripped *text* — so malformed-but-faithful LLM output would otherwise
+    produce an invalid EPUB. Wrap in a namespaced root (so ``epub:type`` resolves), parse
+    with recovery, then return the inner markup. ``None`` when nothing parseable remains, so
+    the caller falls back to the deterministic cleanup.
+    """
+    wrapped = f'<f xmlns:epub="http://www.idpf.org/2007/ops">{fragment}</f>'
+    root = etree.fromstring(wrapped, parser=etree.XMLParser(recover=True))
+    if root is None:
+        return None
+    full = etree.tostring(root, encoding="unicode")
+    close = full.rfind("</f>")
+    if close == -1:                       # recovered to an empty / self-closed wrapper
+        return None
+    return full[full.index(">") + 1:close].strip() or None
 
 
 @dataclass
@@ -47,7 +70,13 @@ def clean_page(config: Config, ocr_text: str, deterministic_fallback: str, *,
         {"role": "system", "content": PAGE_CLEANUP_PROMPT},
         {"role": "user", "content": ocr_text},
     ]
-    xhtml = client.chat(model, messages, temperature=0.0)
+    xhtml = _wellformed_xhtml(client.chat(model, messages, temperature=0.0))
+    if xhtml is None:                     # unparseable markup -> trust deterministic cleanup
+        return CleanupResult(
+            xhtml=deterministic_fallback,
+            verdict=Verdict(ok=False, cer=1.0, insertion_rate=0.0, net_length_delta=1.0,
+                            reasons=["LLM returned unparseable XHTML"]),
+            used_fallback=True)
     verdict = verify(ocr_text, xhtml, config.fidelity)
     if verdict.ok:
         return CleanupResult(xhtml=xhtml, verdict=verdict, used_fallback=False)

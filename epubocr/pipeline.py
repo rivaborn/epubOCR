@@ -18,8 +18,12 @@ from . import layout
 from .assemble import OutputMode, SpineDoc, blocks_to_xhtml, build_epub, paragraphs_to_xhtml
 from .eval import metrics
 
-_OCR_PAGE_TYPES = {"image", "cover", "mixed"}
-_OCR_VERSION = "ocr-1"
+# `mixed` pages (real text + a figure) are NOT OCR'd: they carry their own text and have
+# no extracted page image, so they're preserved as text in build_book (real text > OCR).
+_OCR_PAGE_TYPES = {"image", "cover"}
+# Bump to invalidate the OCR stage cache. ocr-2: Surya 2 joins layout blocks with blank
+# lines so paragraph boundaries survive into the EPUB (was a single '\n' -> one <p>/page).
+_OCR_VERSION = "ocr-2"
 # Pages handed to engine.run_batch per call. Bounds client memory + barrier granularity
 # (and gives incremental cache writes so a crash mid-book keeps finished pages). The
 # server-side concurrency within a chunk is the engine's own (SURYA_INFERENCE_PARALLEL).
@@ -197,6 +201,18 @@ def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
     manifest = project.read_json(project.manifest_path)
     source_epub = next(iter(project.source.glob("*.epub")), None)
 
+    # Pre-pass: gather per-page OCR text so running heads/footers/page numbers — lines that
+    # recur across the book — can be detected once and stripped from every page (epubOCR.md
+    # §6). Without this they leak into the reflowable prose (e.g. a bare page number "7").
+    # Only `image` pages carry OCR text; `mixed`/`text` keep their real source text below.
+    ocr_text_by_idx: dict[int, str] = {}
+    for page in manifest["pages"]:
+        if page["type"] == "image":
+            tp = project.ocr / f"page_{page['index'] + 1:04d}.text.txt"
+            if tp.exists():
+                ocr_text_by_idx[page["index"]] = tp.read_text(encoding="utf-8")
+    running = layout.find_running_lines([ocr_text_by_idx[i] for i in sorted(ocr_text_by_idx)])
+
     docs: list[SpineDoc] = []
     page_no = 0
     counts = {"reflowable": 0, "facsimile": 0, "preserved": 0, "held": 0}
@@ -212,10 +228,9 @@ def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
             continue
 
         page_no += 1
-        if ptype in ("image", "mixed"):
+        if ptype == "image":
             stem = f"page_{idx + 1:04d}"
-            text_path = project.ocr / f"{stem}.text.txt"
-            raw = text_path.read_text(encoding="utf-8") if text_path.exists() else ""
+            raw = layout.strip_running_lines(ocr_text_by_idx.get(idx, ""), running)
             conf = _page_conf(project, stem)
             # Reflowable only with usable text AND adequate confidence. A traditional engine
             # below the floor (or no text) -> facsimile; a VLM (conf=None) stays reflowable and
@@ -234,8 +249,11 @@ def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
                                      page_number=page_no, image_path=_image_for_page(project, page),
                                      ocr_text=raw.strip() or None))
                 counts["facsimile"] += 1
-        elif ptype == "text":
-            # PDF born-digital text travels in the manifest; EPUB text is re-read from source.
+        elif ptype in ("text", "mixed"):
+            # Real text beats OCR (epubOCR.md §2). A born-digital PDF page carries its text in
+            # the manifest; an EPUB `text`/`mixed` page is re-read from source. `mixed` pages
+            # (prose + a figure) have substantial real text and no extracted page image, so they
+            # are preserved here rather than routed to OCR — which would emit a blank page.
             body = page.get("text_html") or (
                 _preserve_text_body(source_epub, page["href"]) if source_epub else "<p></p>")
             docs.append(SpineDoc(idx, f"Page {page_no}", OutputMode.REFLOWABLE,
