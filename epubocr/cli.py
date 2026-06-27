@@ -76,7 +76,9 @@ def endpoints():
 
 @app.command()
 def ingest(source: Path = typer.Argument(..., exists=True, dir_okay=False,
-                                         help="an image-only EPUB or a PDF")):
+                                         help="an image-only EPUB or a PDF"),
+           force_ocr: bool = typer.Option(False, "--force-ocr",
+                                          help="PDF: OCR every page even if it has an embedded text layer")):
     """Unpack an EPUB/PDF, classify pages, extract page images, write manifest.json."""
     from .storage import BookProject
 
@@ -84,13 +86,17 @@ def ingest(source: Path = typer.Argument(..., exists=True, dir_okay=False,
     project = BookProject.for_source(source, cfg.projects_root)
     suffix = source.suffix.lower()
     if suffix == ".pdf":
-        from .ingest_pdf import ingest_pdf as run_ingest
+        from .ingest_pdf import ingest_pdf
+        pages = ingest_pdf(source, project, force_ocr=force_ocr)
     elif suffix == ".epub":
         from .ingest import ingest as run_ingest
+        if force_ocr:
+            typer.secho("note: --force-ocr applies to PDF input; ignored for EPUB.",
+                        fg=typer.colors.YELLOW)
+        pages = run_ingest(source, project)
     else:
         typer.secho(f"unsupported input '{suffix}' (expected .epub or .pdf)", fg=typer.colors.RED)
         raise typer.Exit(code=2)
-    pages = run_ingest(source, project)
 
     counts: dict[str, int] = {}
     for p in pages:
@@ -103,7 +109,7 @@ def ingest(source: Path = typer.Argument(..., exists=True, dir_okay=False,
 @app.command()
 def ocr(
     book: str = typer.Argument(..., help="Book slug under projects_root, or path to an ingested EPUB"),
-    engine: str = typer.Option(None, help="tesseract|surya|paddle|vlm (default from config)"),
+    engine: str = typer.Option(None, help="surya2|surya|tesseract|paddle|vlm (default from config; surya=fast 0.17)"),
     force: bool = typer.Option(False, help="ignore cache and re-OCR every page"),
     limit: int = typer.Option(None, help="OCR only the first N image pages (sampling big books)"),
     preprocess: bool = typer.Option(None, "--preprocess/--no-preprocess",
@@ -135,7 +141,7 @@ def ocr(
 @app.command("ocr-page")
 def ocr_page(
     image: Path = typer.Argument(..., exists=True, dir_okay=False),
-    engine: str = typer.Option(None, help="tesseract|surya|paddle|vlm (default from config)"),
+    engine: str = typer.Option(None, help="surya2|surya|tesseract|paddle|vlm (default from config; surya=fast 0.17)"),
 ):
     """Run one image through an OCR engine and print the text (quick smoke test)."""
     from .ocr import get_engine

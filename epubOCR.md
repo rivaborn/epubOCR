@@ -136,11 +136,13 @@ epubocr/
 
 ```bash
 uv sync                                   # core deps (Python 3.12)
-uv sync --extra surya                     # add Surya (pulls torch; --torch-backend=auto for CUDA)
+uv sync --extra surya2                    # DEFAULT engine: Surya 2 (>=0.20, served-VLM; needs a backend)
+#  ...or --extra surya for the fast local Surya 0.17 (pulls torch; --torch-backend=auto for CUDA; not both)
 uv sync --extra pdf                       # PDF input (PyMuPDF; AGPL-3.0)
 
+# Surya 2 needs a llama-server binary (LLAMA_CPP_BINARY) or a vLLM endpoint; --engine surya needs neither.
 uv run epubocr ingest path/to/book.epub   # (or book.pdf) → extracted/manifest.json, page images
-uv run epubocr ocr  <book>                # OCR image pages (default engine: surya)
+uv run epubocr ocr  <book>                # OCR image pages (default engine: surya2; --engine surya = fast)
 uv run epubocr eval <book> --gold g.json --engines surya,vlm    # compare engines on a gold set
 uv run epubocr build <book> [--llm]       # assemble the improved EPUB (--llm runs cleanup)
 uv run epubocr endpoints                  # live reachability check of configured endpoints

@@ -23,10 +23,11 @@ def get_engine(name: str, config: Config) -> OCREngine:
         from .surya_marker import SuryaEngine
         return SuryaEngine(layout=bool(config.raw.get("ocr", {}).get("layout", False)))
     if name == "surya2":
-        from .surya2 import Surya2Engine
+        from .surya2 import Surya2Engine, _FULL_PAGE_TOKEN_CAP
         ocr_cfg = config.raw.get("ocr", {})
         return Surya2Engine(backend=ocr_cfg.get("surya2_backend", "llamacpp"),
-                            layout=bool(ocr_cfg.get("layout", False)))
+                            layout=bool(ocr_cfg.get("layout", False)),
+                            max_tokens=int(ocr_cfg.get("surya2_max_tokens", _FULL_PAGE_TOKEN_CAP)))
     if name == "paddle":
         from .paddle import PaddleEngine
         return PaddleEngine()

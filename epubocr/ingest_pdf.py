@@ -88,8 +88,12 @@ def _extract_or_render(doc, page, out_dir: Path, stem: str) -> str:
     return fname
 
 
-def ingest_pdf(pdf_path: Path, project: BookProject) -> list[SpinePage]:
-    """Classify a PDF's pages and write the same ``manifest.json`` the EPUB path produces."""
+def ingest_pdf(pdf_path: Path, project: BookProject, *, force_ocr: bool = False) -> list[SpinePage]:
+    """Classify a PDF's pages and write the same ``manifest.json`` the EPUB path produces.
+
+    ``force_ocr`` ignores any embedded text layer and routes **every** page to image OCR — use
+    it for scanned PDFs that carry a poor prior OCR layer you'd rather re-transcribe with Surya.
+    """
     fitz = _import_fitz()
     project.ensure()
     pdf_path = Path(pdf_path)
@@ -104,7 +108,7 @@ def ingest_pdf(pdf_path: Path, project: BookProject) -> list[SpinePage]:
             page = doc[pno]
             tlen = _text_len(page)
             idref = f"pdfpage-{pno + 1}"
-            if tlen >= _PDF_TEXT_MIN:
+            if tlen >= _PDF_TEXT_MIN and not force_ocr:
                 pages.append(SpinePage(pno, idref, "", PageType.TEXT, tlen,
                                        text_html=_text_html(page)))
             else:
@@ -118,6 +122,7 @@ def ingest_pdf(pdf_path: Path, project: BookProject) -> list[SpinePage]:
     project.write_json(project.manifest_path, {
         "source_file": pdf_path.name,
         "source": "pdf",
+        "force_ocr": force_ocr,
         "page_count": len(pages),
         "counts": {t.value: sum(1 for p in pages if p.page_type is t) for t in PageType},
         "pages": [p.to_json() for p in pages],

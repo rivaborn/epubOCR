@@ -1,13 +1,26 @@
-"""Surya 2 (surya-ocr >= 0.20) — the optional, served-VLM Surya engine.
+"""Surya 2 (surya-ocr >= 0.20) — the served-VLM Surya engine; the **default** engine.
 
 Surya 0.20 ("Surya 2") replaced the local detection/recognition/layout models with a
 single VLM served through a backend — **vllm** (NVIDIA) or **llama.cpp** (CPU/Apple) —
-via ``SuryaInferenceManager``. So it is a *generative* OCR engine: more capable on clean
-documents, but it can confabulate (it ships its own blank-region guard) and it needs a
-running backend. It is therefore **opt-in** and kept entirely separate from the local
-0.17 :class:`~epubocr.ocr.surya_marker.SuryaEngine`, which stays the fidelity-first
-default. In the pipeline it behaves like the VLM engine: it reports no per-line
-confidence, so the degeneracy guard + consensus do the policing rather than a conf floor.
+via ``SuryaInferenceManager``. So it is a *generative* OCR engine. Validation on real
+scans (a 1965 hardback) showed it earns the default slot on fidelity grounds: it matches
+or beats the 0.17 engine on clean prose, drops trailing noise on marginal pages, and —
+critically for a fidelity-first tool — returns **empty** (not confabulated text) on
+unreadable pages (covers, near-blank), which routes them straight to facsimile.
+
+Two costs make 0.17 worth keeping as the fast ``--engine surya`` option:
+  * it is ~6-10x slower per page (autoregressive generation vs a parallel recognition
+    transformer); and
+  * it needs a running backend (a ``llama-server`` binary or a vLLM endpoint) that the
+    ``surya2`` extra does not ship.
+
+Contrary to an earlier assumption, Surya 2 **does** report a per-block confidence (~0.99
+on clean prose, ``None`` on pages it couldn't read), so the conf floor in ``build_book``
+applies normally — the degeneracy guard + consensus remain as backstops.
+
+A generative model can churn toward its token ceiling on a hard image (a cover OCR'd for
+188s and produced nothing); :data:`_FULL_PAGE_TOKEN_CAP` lowers Surya's full-page token
+limit so a pathological page aborts in bounded time. A real page never approaches it.
 
 Install with ``uv sync --extra surya2`` (mutually exclusive with the ``surya`` extra —
 both are the same ``surya-ocr`` package at incompatible versions) and provide a backend.
@@ -19,6 +32,12 @@ import importlib.metadata as _md
 from pathlib import Path
 
 from .base import OCREngine, OcrResult, OcrWord
+
+# Cap full-page generation so a hard image (e.g. a cover the VLM can't read) can't churn
+# toward Surya's 12288-token default for minutes. Real pages stay well under this — page 7
+# of the test book used ~450 tokens; the HIGH_ACCURACY bbox-HTML format inflates that but a
+# dense page is still ~2-4k. Tunable via [ocr] surya2_max_tokens.
+_FULL_PAGE_TOKEN_CAP = 6144
 
 
 def _surya_minor() -> tuple[int, int]:
@@ -54,11 +73,13 @@ class Surya2Engine(OCREngine):
     name = "surya2"
     wants_preprocess = False  # the VLM reads the raw page
 
-    def __init__(self, backend: str | None = "llamacpp", layout: bool = False):
+    def __init__(self, backend: str | None = "llamacpp", layout: bool = False,
+                 max_tokens: int | None = _FULL_PAGE_TOKEN_CAP):
         self._rec = None
         self._manager = None
         self._backend = backend          # "llamacpp" | "vllm" | None (let Surya autodetect)
         self._layout = layout
+        self._max_tokens = max_tokens    # full-page generation ceiling (runaway guard)
 
     def identity(self) -> str:
         try:
@@ -80,7 +101,12 @@ class Surya2Engine(OCREngine):
         try:
             from surya.inference import SuryaInferenceManager
             from surya.recognition import RecognitionPredictor
-            # lazy=True: the backend (and model load) only engages on the first OCR call.
+            from surya.settings import settings as _surya_settings
+            # _full_page_ocr reads this at call time off the settings singleton; lowering it
+            # bounds a runaway on an unreadable page without truncating any real page.
+            if self._max_tokens:
+                _surya_settings.SURYA_MAX_TOKENS_FULL_PAGE = int(self._max_tokens)
+            # The backend (and model load) only engages on the first OCR call.
             self._manager = SuryaInferenceManager(method=self._backend)
             self._rec = RecognitionPredictor(self._manager)
         except ImportError as exc:

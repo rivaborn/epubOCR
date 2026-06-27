@@ -12,7 +12,8 @@ emitting hallucinated text.
 
 ```bash
 uv sync                              # core CLI deps (light, Python 3.12)
-uv sync --extra surya                # default OCR engine (pulls torch — see CUDA note below)
+uv sync --extra surya2               # DEFAULT engine: Surya 2 (>=0.20) served-VLM — also needs a backend (below)
+uv sync --extra surya                # fast `--engine surya` path: local Surya 0.17 (pulls torch — see CUDA note)
 uv sync --extra ocr-local            # Tesseract + OpenCV (CPU preprocessing/deskew/binarize)
 uv sync --extra pdf                  # PDF input via PyMuPDF (AGPL-3.0) — see gotchas
 cp config.toml config.local.toml     # then put REAL endpoints here (gitignored; see Config)
@@ -88,9 +89,12 @@ so the PDF path reuses them unchanged.
 
 **Per-page adaptive routing** lives in `pipeline.build_book` (`conf_floor=0.80`). A scanned page is
 emitted **reflowable** only with usable text AND adequate confidence; otherwise **facsimile** (image +
-hidden OCR text as a searchable layer). Subtlety: a traditional engine reports `mean_conf`, but a VLM
-reports `conf=None` — a `None`-confidence page stays reflowable and relies on the degeneracy guard +
-fidelity verifier instead of the floor. `text` pages are preserved from the source (never re-OCR'd).
+hidden OCR text as a searchable layer). Subtlety: a traditional engine (and, as it turns out, Surya 2)
+reports `mean_conf`, but the `vlm` engine reports `conf=None` — a `None`-confidence page stays reflowable
+and relies on the degeneracy guard + fidelity verifier instead of the floor. Surya 2 returns real
+per-block confidence on readable pages and `conf=None` + empty text on pages it can't read (covers,
+near-blank), which the floor/empty-text check routes to facsimile. `text` pages are preserved from the
+source (never re-OCR'd).
 
 **Config indirection is three levels:** `endpoints` (URLs) → `roles` (`vlm_ocr`, `text_cleanup` → an
 endpoint) → `models` (per-endpoint aliases, because Ollama tags `qwen2.5vl:7b` and vLLM served-names
@@ -119,13 +123,19 @@ the default build run fully local.
 - **Surya (local 0.17):** predictors share one `FoundationPredictor`; `layout=True` (opt-in via
   `[ocr] layout`) adds structured blocks but degrades on faded scans (`structure.build_blocks` walks
   lines in reading order, degrading gracefully to paragraph-joining). Strips inline `<b>`/`<i>`/`<math>`.
-- **Two Surya engines, mutually exclusive.** `surya` (`surya_marker.SuryaEngine`) = local **0.17.x**
-  (default, per-line confidence; the extra is pinned `<0.18`). `surya2` (`surya2.Surya2Engine`) =
-  **Surya 2 (≥0.20)**, a served-VLM needing a vllm/llama.cpp backend (`[ocr] surya2_backend`); it
-  behaves like the VLM engine (no confidence → degeneracy guard + consensus do the policing). Both are
-  the same `surya-ocr` package at incompatible versions, so only one installs at a time
-  (`[tool.uv].conflicts` locks them separately); each engine version-guards with a clear error. The
-  0.17 engine's `identity()` stays `surya:0.17:*` (cache-stable — don't make it report the patch).
+- **Two Surya engines, mutually exclusive; `surya2` is the default.** `surya2` (`surya2.Surya2Engine`)
+  = **Surya 2 (≥0.20)**, a served-VLM needing a vllm/llama.cpp backend (`[ocr] surya2_backend` + a
+  `llama-server` binary via `LLAMA_CPP_BINARY`, or a vLLM endpoint). It is the default on **fidelity**
+  grounds — validated on a real 1965 scan it matched/beat 0.17 on clean prose, was cleaner on marginal
+  pages, and returned **empty (not hallucinated)** text on unreadable pages — but it is **~6-10x slower**
+  (autoregressive) and reports a real per-block confidence (so the conf floor applies; the earlier
+  "no confidence, VLM-like" assumption was wrong). A hard image can churn toward the token ceiling, so
+  `Surya2Engine` caps `SURYA_MAX_TOKENS_FULL_PAGE` (`[ocr] surya2_max_tokens`, default 6144). `surya`
+  (`surya_marker.SuryaEngine`) = local **0.17.x** — the fast, self-contained, **no-backend** `--engine
+  surya` option (per-line confidence; the extra is pinned `<0.18`); its `identity()` stays `surya:0.17:*`
+  (cache-stable — don't make it report the patch). Both are the same `surya-ocr` package at incompatible
+  versions, so only one installs at a time (`[tool.uv].conflicts` locks them separately); each engine
+  version-guards with a clear error.
 - **Windows console:** `cli.py` reconfigures stdout/stderr to UTF-8 (book text has em-dashes/ligatures
   that crash the cp1252 default). Keep CLI output ASCII-safe where practical (`->` not `→`).
 - **PDF input** (`ingest_pdf.py`, opt-in `pdf` extra → **PyMuPDF, AGPL-3.0**): a page with a real text

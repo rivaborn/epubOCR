@@ -39,11 +39,18 @@ vlm_ocr_hard   = "qwen2.5-vl-32b"
 text_cleanup   = "qwen3:32b"
 text_xhtml     = "qwen2.5-coder:32b"
 
-# OCR engine default (laptop). One of: tesseract | surya | paddle | vlm.
+# OCR engine default (laptop). One of: tesseract | surya | surya2 | paddle | vlm.
+# surya2 (Surya 2, >=0.20) is the default on fidelity grounds (honest-empty on unreadable
+#   pages, cleaner marginal pages) but is ~6-10x slower and NEEDS A BACKEND: set
+#   surya2_backend + a llama-server binary (LLAMA_CPP_BINARY) or a vLLM endpoint.
+# surya (Surya 0.17, the `--engine surya` fast path) is the local, self-contained,
+#   no-backend option — much faster, per-line confidence. Switch the default here if you
+#   want speed over the last few points of fidelity.
 [ocr]
-default_engine = "surya"                             # local Surya 0.17 (per-line confidence + reading order on the 4060)
+default_engine = "surya2"                            # Surya 2 served-VLM; needs a backend (see surya2_backend)
 layout         = false                               # opt-in: extract headings/lists/tables/reading order (Surya layout)
-surya2_backend = "llamacpp"                          # backend for the optional 'surya2' engine (Surya 2, >=0.20): llamacpp | vllm
+surya2_backend = "llamacpp"                          # backend for the 'surya2' engine: llamacpp | vllm
+surya2_max_tokens = 6144                             # full-page generation cap (runaway guard); real pages stay well under
 
 # Fidelity verifier thresholds (§7). A cleaned page that drifts past these is held for QA.
 [fidelity]
