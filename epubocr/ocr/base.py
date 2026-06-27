@@ -48,3 +48,13 @@ class OCREngine(abc.ABC):
     @abc.abstractmethod
     def run(self, image_path: Path) -> OcrResult:  # pragma: no cover - interface
         ...
+
+    def run_batch(self, image_paths: list[Path]) -> list[OcrResult]:
+        """OCR several page images at once, returning results in the same order.
+
+        The default is sequential — correct for any engine. Served-VLM / Surya engines
+        override this to hand the whole list to one batched call (concurrent HTTP
+        requests against the vLLM/llama.cpp server, or one GPU batch), which is where
+        the throughput win for whole-book OCR comes from.
+        """
+        return [self.run(p) for p in image_paths]

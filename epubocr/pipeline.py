@@ -20,6 +20,10 @@ from .eval import metrics
 
 _OCR_PAGE_TYPES = {"image", "cover", "mixed"}
 _OCR_VERSION = "ocr-1"
+# Pages handed to engine.run_batch per call. Bounds client memory + barrier granularity
+# (and gives incremental cache writes so a crash mid-book keeps finished pages). The
+# server-side concurrency within a chunk is the engine's own (SURYA_INFERENCE_PARALLEL).
+_OCR_BATCH = 32
 
 
 @dataclass
@@ -39,44 +43,74 @@ def _image_for_page(project: BookProject, page: dict) -> Path | None:
     return project.pages / imgs[0]
 
 
+def _prep_image(src: Path, cfg: Config, use_pp: bool) -> Path:
+    """Return the image path to OCR — preprocessed when the engine wants it, else src."""
+    if not use_pp:
+        return src
+    processed = src.with_name(src.stem.replace("_original", "") + "_processed.png")
+    return preprocess_image(src, processed, cfg.preprocess)
+
+
 def ocr_image(engine: OCREngine, src: Path, project: BookProject, cfg: Config,
               preprocess: bool | None = None) -> tuple[OcrResult, Path]:
     """Preprocess (if requested) then OCR a single image. ``preprocess`` overrides the
     engine default (None -> engine.wants_preprocess). Returns (result, image_used)."""
     use_pp = engine.wants_preprocess if preprocess is None else preprocess
-    image_used = src
-    if use_pp:
-        processed = src.with_name(src.stem.replace("_original", "") + "_processed.png")
-        image_used = preprocess_image(src, processed, cfg.preprocess)
+    image_used = _prep_image(src, cfg, use_pp)
     return engine.run(image_used), image_used
 
 
 def ocr_book(project: BookProject, engine_name: str, cfg: Config, *, force: bool = False,
-             limit: int | None = None, preprocess: bool | None = None) -> list[PageOcr]:
+             limit: int | None = None, preprocess: bool | None = None,
+             batch_size: int = _OCR_BATCH) -> list[PageOcr]:
+    """OCR a book's image pages, batching the cache-misses through ``engine.run_batch``.
+
+    Three passes so the served-VLM/Surya engines OCR many pages concurrently instead of
+    one HTTP round-trip at a time: (1) build the page work-list + cache keys and read any
+    cache hits, (2) ``run_batch`` the misses in chunks (caching each), (3) write per-page
+    raw.json/text.txt + the degeneracy guard, in spine order. Per-page caching, ``force``,
+    ``limit``, and the routing are all unchanged — only the OCR calls are batched.
+    """
     manifest = project.read_json(project.manifest_path)
     engine = get_engine(engine_name, cfg)
     use_pp = engine.wants_preprocess if preprocess is None else preprocess
     params = {"engine": engine.identity(), "preprocess": cfg.preprocess if use_pp else None}
 
-    out: list[PageOcr] = []
+    # Pass 1 — work-list: each image page with its cache key and any cache hit.
+    work: list[dict] = []
     for page in manifest["pages"]:
         if page["type"] not in _OCR_PAGE_TYPES:
             continue
-        if limit is not None and len(out) >= limit:
+        if limit is not None and len(work) >= limit:
             break
         src = _image_for_page(project, page)
         if src is None or not src.exists():
             continue
+        key = cache_key(content=src.read_bytes(), params=params, model=engine.identity(),
+                        version=_OCR_VERSION)
+        work.append({"page": page, "src": src, "key": key,
+                     "cached": None if force else project.cache_get("ocr", key), "result": None})
 
-        key = cache_key(content=src.read_bytes(), params=params, model=engine.identity(), version=_OCR_VERSION)
-        cached = None if force else project.cache_get("ocr", key)
-        if cached is not None:
-            result = OcrResult(text=cached["text"], words=[], mean_conf=cached.get("mean_conf"),
-                               engine=cached.get("engine", engine.identity()), meta=cached.get("meta", {}))
+    # Pass 2 — batch-OCR the cache-misses; the engine fans the chunk out concurrently.
+    todo = [w for w in work if w["cached"] is None]
+    for i in range(0, len(todo), max(1, batch_size)):
+        chunk = todo[i:i + max(1, batch_size)]
+        srcs = [_prep_image(w["src"], cfg, use_pp) for w in chunk]
+        for w, result in zip(chunk, engine.run_batch(srcs)):
+            project.cache_put("ocr", w["key"], result.to_json())
+            w["result"] = result
+
+    # Pass 3 — per-page post-processing + writes, in spine order.
+    out: list[PageOcr] = []
+    for w in work:
+        page = w["page"]
+        if w["cached"] is not None:
+            c = w["cached"]
+            result = OcrResult(text=c["text"], words=[], mean_conf=c.get("mean_conf"),
+                               engine=c.get("engine", engine.identity()), meta=c.get("meta", {}))
             was_cached = True
         else:
-            result, _ = ocr_image(engine, src, project, cfg, preprocess=preprocess)
-            project.cache_put("ocr", key, result.to_json())
+            result = w["result"]
             was_cached = False
 
         # The fidelity verifier guards the cleanup pass, not OCR — so screen OCR output

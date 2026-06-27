@@ -57,14 +57,24 @@ class SuryaEngine(OCREngine):
             self._layout_pred = LayoutPredictor(foundation)
 
     def run(self, image_path: Path) -> OcrResult:
+        return self.run_batch([image_path])[0]
+
+    def run_batch(self, image_paths: list[Path]) -> list[OcrResult]:
+        """OCR a chunk of pages in one on-GPU batch (Surya batches recognition over
+        the whole list), then layout once over the same list when enabled."""
         from PIL import Image
 
         self._ensure_loaded()
-        img = Image.open(image_path).convert("RGB")
+        images = [Image.open(p).convert("RGB") for p in image_paths]
         # sort_lines -> reading order; drop_repeated_text -> kill degenerate loops;
         # math_mode off -> plain prose, no spurious LaTeX wrapping.
-        result = self._rec([img], det_predictor=self._det, sort_lines=True,
-                           drop_repeated_text=True, math_mode=False)[0]
+        results = self._rec(images, det_predictor=self._det, sort_lines=True,
+                            drop_repeated_text=True, math_mode=False)
+        layouts = self._layout_pred(images) if self._layout_pred is not None else [None] * len(images)
+        return [self._to_ocr(res, lay) for res, lay in zip(results, layouts)]
+
+    def _to_ocr(self, result, layout_res) -> OcrResult:
+        from ..structure import build_blocks, poly_bbox
 
         texts: list[str] = []
         words: list[OcrWord] = []
@@ -79,9 +89,7 @@ class SuryaEngine(OCREngine):
                 confs.append(float(conf))
 
         meta = {"device": self._device, "lines": len(result.text_lines)}
-        if self._layout_pred is not None:
-            from ..structure import build_blocks, poly_bbox
-            layout_res = self._layout_pred([img])[0]
+        if layout_res is not None:
             line_items = [((ln.text or ""), poly_bbox(ln.polygon)) for ln in result.text_lines]
             blocks = build_blocks(line_items, layout_res.bboxes)
             meta["blocks"] = [b.to_json() for b in blocks]
