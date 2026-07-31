@@ -62,7 +62,7 @@ surya2_max_tokens = 6144                             # full-page generation cap 
 # 32-parallel throughput suffers through the proxy: the slot's direct relay
 # at http://192.168.1.40:11438/v1 (needs the relay bound to 0.0.0.0 + a
 # firewall rule first — the :11435 companion-Ollama precedent).
-surya2_inference_url = "http://192.168.1.40:11430/v1"
+surya2_inference_url = "http://192.168.1.40:11430/lane/companion/v1"
 surya2_model         = "surya-ocr-2"                  # the server's --served-model-name
 
 # Fidelity verifier thresholds (§7). A cleaned page that drifts past these is held for QA.
