@@ -49,15 +49,21 @@ text_xhtml     = "qwen2.5-coder:32b"
 [ocr]
 default_engine = "surya2"                            # Surya 2 served-VLM; needs a backend (see surya2_backend)
 layout         = false                               # opt-in: extract headings/lists/tables/reading order (Surya layout)
-surya2_backend = "llamacpp"                          # backend for the 'surya2' engine: llamacpp | vllm
+surya2_backend = "vllm"                              # backend for the 'surya2' engine: llamacpp | vllm
 surya2_max_tokens = 6144                             # full-page generation cap (runaway guard); real pages stay well under
 # surya2_parallel = 32                               # concurrent requests per batched OCR call. Measured on a 3090: ~1.8x
 #                                                    #   over 8; plateau 24-48 (knee ~24), 64 regresses. Tune to your server.
 # vllm backend: attach to an already-running OpenAI-compatible vLLM server (no local
 # binary). Point at the IP literal, not localhost. The model name MUST equal that
 # server's served name (Surya's attach path rejects a mismatch).
-# surya2_inference_url = "http://127.0.0.1:11437/v1"   # set surya2_backend = "vllm" to use this
-# surya2_model         = "surya-ocr-2"                  # the server's --served-model-name
+# Since 2026-07-31 surya2 is ALWAYS RESIDENT on the 3070 Ti as an LLMConfig
+# companion slot; this URL is the LLMConfig gateway, which resolves the
+# fleet-unique served name onto that slot (auto-load included). Fallback if
+# 32-parallel throughput suffers through the proxy: the slot's direct relay
+# at http://192.168.1.40:11438/v1 (needs the relay bound to 0.0.0.0 + a
+# firewall rule first — the :11435 companion-Ollama precedent).
+surya2_inference_url = "http://192.168.1.40:11430/v1"
+surya2_model         = "surya-ocr-2"                  # the server's --served-model-name
 
 # Fidelity verifier thresholds (§7). A cleaned page that drifts past these is held for QA.
 [fidelity]
