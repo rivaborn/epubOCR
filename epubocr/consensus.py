@@ -33,15 +33,29 @@ class Consensus:
 
 
 def assess(primary_text: str, primary_conf: float | None, challenger_text: str, *,
-           agree_floor: float = 0.85, conf_floor: float = 0.80) -> Consensus:
+           agree_floor: float = 0.85, conf_floor: float = 0.80,
+           hard_floor: float = 0.60) -> Consensus:
     """Decide whether to trust a page's transcription for reflowable output.
 
-    Trust if the engines agree (independent confirmation) OR the primary engine is
-    confident on its own. Otherwise route to facsimile.
+    Three bands, because confidence and agreement fail in different directions:
+
+    * ``agr >= agree_floor`` — two independent architectures converged; trust it.
+    * ``agr < hard_floor`` — **never trusted, however confident the primary is.** A
+      self-reported confidence cannot rescue this band: measured 2026-08-06, PaddleOCR-VL
+      fabricated whole pages at conf 0.953-0.984 against a book mean of 0.981, and Chandra
+      invented 12,147 characters on a blank page at conf 0.994. Confident-and-wrong is
+      precisely the failure this signal exists to catch, so letting `primary_conf`
+      override severe disagreement would defeat the check on exactly the pages that need
+      it (it did, in the original implementation).
+    * in between — genuinely ambiguous (one engine mis-segmenting, hyphenation, a table);
+      the primary's own confidence breaks the tie.
     """
     agr = agreement(primary_text, challenger_text)
     if agr >= agree_floor:
         return Consensus(agr, True, f"engines agree ({agr:.2f})")
+    if agr < hard_floor:
+        return Consensus(agr, False, f"engines disagree sharply ({agr:.2f})")
     if primary_conf is not None and primary_conf >= conf_floor:
-        return Consensus(agr, True, f"primary confident ({primary_conf:.2f})")
+        return Consensus(agr, True, f"partial agreement ({agr:.2f}), primary confident "
+                                    f"({primary_conf:.2f})")
     return Consensus(agr, False, f"low agreement ({agr:.2f}) and low/no confidence")

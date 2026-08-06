@@ -6,6 +6,7 @@ hallucination risk that the fidelity-first design exists to suppress.
 from __future__ import annotations
 
 import re
+import statistics
 from collections import Counter
 from dataclasses import dataclass
 
@@ -80,6 +81,31 @@ def repetition_ratio(text: str) -> float:
 
 def is_degenerate(text: str, *, max_repetition: float = 0.35) -> bool:
     return repetition_ratio(text) > max_repetition
+
+
+def length_outliers(lengths: dict[int, int], *, factor: float = 2.0,
+                    min_pages: int = 12, min_chars: int = 1200) -> set[int]:
+    """Pages whose OCR text is far longer than the book's own median page.
+
+    The second degeneracy test, and the one that catches what ``repetition_ratio``
+    cannot. That test keys on the single most frequent *token*, so a model looping over
+    *varied* filler slips under it: measured 2026-08-06, PaddleOCR-VL ran 12 of 359 pages
+    to the token cap emitting "Input the name of the hospital." / "The text is not
+    printed." at repetition ratios of 0.03-0.33 — all but one below the 0.35 threshold —
+    and Chandra fabricated 12,147 chars on a *blank* page at ratio 0.101. Every one of
+    those pages was 2x+ the book's median length, so this catches all 13 for free.
+
+    Scale-free by construction: the reference is the book's own median, so a densely-set
+    book is not penalised for being dense. ``min_chars`` keeps a book of near-empty pages
+    (a plate section) from making every real page an "outlier"; ``min_pages`` declines to
+    guess a median from too small a sample.
+    """
+    real = [n for n in lengths.values() if n > 0]
+    if len(real) < min_pages:
+        return set()
+    med = statistics.median(real)
+    threshold = max(factor * med, min_chars)
+    return {idx for idx, n in lengths.items() if n > threshold}
 
 
 @dataclass(frozen=True)

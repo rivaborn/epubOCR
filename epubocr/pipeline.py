@@ -15,7 +15,7 @@ from .ocr.base import OCREngine, OcrResult
 from .preprocess import preprocess_image
 from .storage import BookProject, cache_key
 from . import layout
-from .assemble import OutputMode, SpineDoc, blocks_to_xhtml, build_epub, paragraphs_to_xhtml
+from .assemble import OutputMode, Section, SpineDoc, blocks_to_xhtml, build_epub, paragraphs_to_xhtml
 from .eval import metrics
 
 # `mixed` pages (real text + a figure) are NOT OCR'd: they carry their own text and have
@@ -64,6 +64,11 @@ def ocr_image(engine: OCREngine, src: Path, project: BookProject, cfg: Config,
     return engine.run(image_used), image_used
 
 
+# The engine instance from the most recent ocr_book call, so the CLI can print a pool's
+# per-unit throughput without ocr_book's return type having to know about pools.
+_last_engine: dict = {}
+
+
 def ocr_book(project: BookProject, engine_name: str, cfg: Config, *, force: bool = False,
              limit: int | None = None, preprocess: bool | None = None,
              batch_size: int = _OCR_BATCH) -> list[PageOcr]:
@@ -77,6 +82,7 @@ def ocr_book(project: BookProject, engine_name: str, cfg: Config, *, force: bool
     """
     manifest = project.read_json(project.manifest_path)
     engine = get_engine(engine_name, cfg)
+    _last_engine["engine"] = engine          # so the CLI can report pool per-unit stats
     use_pp = engine.wants_preprocess if preprocess is None else preprocess
     params = {"engine": engine.identity(), "preprocess": cfg.preprocess if use_pp else None}
 
@@ -96,6 +102,9 @@ def ocr_book(project: BookProject, engine_name: str, cfg: Config, *, force: bool
                      "cached": None if force else project.cache_get("ocr", key), "result": None})
 
     # Pass 2 — batch-OCR the cache-misses; the engine fans the chunk out concurrently.
+    # A pooled engine asks for a bigger batch: its own split has to reach every unit, and
+    # a batch <= its per-unit chunk would leave all but one unit idle (see PoolEngine).
+    batch_size = max(batch_size, getattr(engine, "preferred_batch", 0))
     todo = [w for w in work if w["cached"] is None]
     for i in range(0, len(todo), max(1, batch_size)):
         chunk = todo[i:i + max(1, batch_size)]
@@ -104,34 +113,51 @@ def ocr_book(project: BookProject, engine_name: str, cfg: Config, *, force: bool
             project.cache_put("ocr", w["key"], result.to_json())
             w["result"] = result
 
-    # Pass 3 — per-page post-processing + writes, in spine order.
-    out: list[PageOcr] = []
+    # Pass 3 — resolve every page's result, then post-process + write in spine order.
     for w in work:
-        page = w["page"]
         if w["cached"] is not None:
             c = w["cached"]
-            result = OcrResult(text=c["text"], words=[], mean_conf=c.get("mean_conf"),
-                               engine=c.get("engine", engine.identity()), meta=c.get("meta", {}))
-            was_cached = True
+            w["result"] = OcrResult(text=c["text"], words=[], mean_conf=c.get("mean_conf"),
+                                    engine=c.get("engine", engine.identity()),
+                                    meta=c.get("meta", {}))
+            w["was_cached"] = True
         else:
-            result = w["result"]
-            was_cached = False
+            w["was_cached"] = False
+
+    # The length guard is book-relative, so it needs every page before judging any: a
+    # degenerate page is one that ran long against THIS book's median, not an absolute size.
+    outliers = metrics.length_outliers(
+        {i: len(w["result"].text) for i, w in enumerate(work)},
+        factor=float(cfg.raw.get("ocr", {}).get("degenerate_length_factor", 2.0)))
+
+    out: list[PageOcr] = []
+    for i, w in enumerate(work):
+        page = w["page"]
+        result = w["result"]
 
         # The fidelity verifier guards the cleanup pass, not OCR — so screen OCR output
-        # here for degenerate repetition loops (epubOCR.md §4/§9). Degenerate pages get
-        # empty text so the builder routes them to facsimile + QA instead of trusting them.
+        # here (epubOCR.md §4/§9). TWO tests, because one is not enough: repetition catches
+        # a single token looping ('[illegible] [illegible]…'), while the length outlier
+        # catches a model looping over VARIED filler or fabricating on a blank page — which
+        # slips under the repetition threshold entirely (measured 2026-08-06, see fleet.md
+        # §11). Either verdict blanks the text so the builder routes the page to facsimile.
         rep = metrics.repetition_ratio(result.text)
-        degenerate = metrics.is_degenerate(result.text)
+        rep_degenerate = metrics.is_degenerate(result.text)
+        long_degenerate = i in outliers
+        degenerate = rep_degenerate or long_degenerate
         text_out = "" if degenerate else result.text
 
         stem = f"page_{page['index'] + 1:04d}"
         raw = result.to_json()
         raw["repetition_ratio"] = round(rep, 3)
         raw["degenerate"] = degenerate
+        if degenerate:
+            raw["degenerate_reason"] = "repetition" if rep_degenerate else "length_outlier"
         project.write_json(project.ocr / f"{stem}.raw.json", raw)
         (project.ocr / f"{stem}.text.txt").write_text(text_out, encoding="utf-8")
         out.append(PageOcr(index=page["index"], engine=result.engine, mean_conf=result.mean_conf,
-                           text_chars=len(text_out.strip()), cached=was_cached, degenerate=degenerate))
+                           text_chars=len(text_out.strip()), cached=w["was_cached"],
+                           degenerate=degenerate))
     return out
 
 
@@ -188,15 +214,48 @@ def _page_blocks(project: BookProject, stem: str) -> list | None:
     return (project.read_json(p).get("meta") or {}).get("blocks")
 
 
+def _consensus_candidates(project: BookProject, manifest: dict, ocr_text_by_idx: dict[int, str],
+                          conf_floor: float, budget: int) -> list[int]:
+    """Page indices worth spending a challenger transcription on, least trusted first.
+
+    The budget is spent where self-reported confidence is weakest — a page with **no**
+    confidence at all (the VLM-family engines) ranks first, since for those the floor in
+    ``build_book`` cannot fire and consensus is the *only* check besides the degeneracy
+    guard. Pages already below the floor are skipped: they are going to facsimile anyway,
+    so a challenger would change nothing.
+    """
+    scored: list[tuple[float, int]] = []
+    for page in manifest["pages"]:
+        if page["type"] != "image":
+            continue
+        idx = page["index"]
+        if not ocr_text_by_idx.get(idx, "").strip():
+            continue
+        conf = _page_conf(project, f"page_{idx + 1:04d}")
+        if conf is not None and conf < conf_floor:
+            continue                       # already routed to facsimile
+        scored.append((-1.0 if conf is None else conf, idx))
+    scored.sort()
+    return [idx for _c, idx in scored[:budget]]
+
+
 def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
                title: str | None = None, cleanup_endpoint: str | None = None,
-               cleanup_model: str | None = None, conf_floor: float = 0.80) -> tuple[Path, dict]:
+               cleanup_model: str | None = None, conf_floor: float = 0.80,
+               consensus_engine: str | None = None,
+               consensus_max_pages: int = 0) -> tuple[Path, dict]:
     """Assemble an improved EPUB from the manifest + per-page OCR (deterministic by default).
 
     Per-page adaptive output (epubOCR.md §8): cover and low-confidence pages -> facsimile
     (with the OCR text kept as a hidden searchable layer); confident scanned pages ->
     reflowable from cleaned OCR; real text pages -> preserved. ``conf_floor`` is the OCR
     confidence below which a page is preserved as facsimile rather than trusted as text.
+
+    ``consensus_engine`` turns on the cross-engine check (epubOCR.md §4): up to
+    ``consensus_max_pages`` of the least-trusted reflowable candidates are re-transcribed
+    by a second, independent engine and put through :func:`consensus.assess`; a page the
+    two engines disagree on is routed to facsimile even if the primary was confident.
+    This is the only guard that catches a *confident* fabrication — see fleet.md §11.
     """
     manifest = project.read_json(project.manifest_path)
     source_epub = next(iter(project.source.glob("*.epub")), None)
@@ -213,42 +272,82 @@ def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
                 ocr_text_by_idx[page["index"]] = tp.read_text(encoding="utf-8")
     running = layout.find_running_lines([ocr_text_by_idx[i] for i in sorted(ocr_text_by_idx)])
 
-    docs: list[SpineDoc] = []
+    # Chapter starts from the embedded outline (PDF bookmarks / EPUB nav), recorded at ingest.
+    chapter_titles = {int(e[0]): str(e[1]).strip()
+                      for e in (manifest.get("outline") or []) if e and len(e) >= 2 and e[1]}
+    book_title = title or Path(manifest.get("epub") or manifest.get("source_file") or "book").stem
+
+    # Cross-engine consensus: transcribe the least-trusted candidates with a second engine
+    # up front (batched, so it rides the same fan-out as OCR) and judge each page below.
+    consensus_by_idx: dict[int, "consensus.Consensus"] = {}
+    if consensus_engine and consensus_max_pages > 0:
+        from . import consensus as _consensus
+
+        cand = _consensus_candidates(project, manifest, ocr_text_by_idx, conf_floor,
+                                     consensus_max_pages)
+        if cand:
+            challenger = get_engine(consensus_engine, cfg)
+            by_idx = {p["index"]: p for p in manifest["pages"]}
+            srcs, kept = [], []
+            for idx in cand:
+                src = _image_for_page(project, by_idx[idx])
+                if src and src.exists():
+                    srcs.append(_prep_image(src, cfg, challenger.wants_preprocess))
+                    kept.append(idx)
+            for idx, res in zip(kept, challenger.run_batch(srcs)):
+                consensus_by_idx[idx] = _consensus.assess(
+                    ocr_text_by_idx.get(idx, ""), _page_conf(project, f"page_{idx + 1:04d}"),
+                    res.text, conf_floor=conf_floor)
+
+    page_docs: list[tuple[SpineDoc, str | None]] = []   # (doc, chapter title if it opens one)
     page_no = 0
-    counts = {"reflowable": 0, "facsimile": 0, "preserved": 0, "held": 0}
+    counts = {"reflowable": 0, "facsimile": 0, "preserved": 0, "held": 0,
+              "consensus_checked": len(consensus_by_idx),
+              "consensus_rejected": 0}
 
     for page in manifest["pages"]:
         ptype, idx = page["type"], page["index"]
         if ptype == "empty":
             continue
-        if ptype == "cover":
-            docs.append(SpineDoc(idx, "Cover", OutputMode.FACSIMILE,
-                                 image_path=_image_for_page(project, page)))
+        if ptype == "cover":  # cover -> its own section (no page number; flow doesn't run through it)
+            page_docs.append((SpineDoc(idx, "Cover", OutputMode.FACSIMILE,
+                                       image_path=_image_for_page(project, page)), "Cover"))
             counts["facsimile"] += 1
             continue
 
         page_no += 1
+        ch_title = chapter_titles.get(idx)
         if ptype == "image":
             stem = f"page_{idx + 1:04d}"
             raw = layout.strip_running_lines(ocr_text_by_idx.get(idx, ""), running)
             conf = _page_conf(project, stem)
+            blocks = _page_blocks(project, stem)
+            # Fallback chapter signal: a page that opens with a layout heading (Surya layout=True).
+            if ch_title is None and blocks and blocks[0].get("type") == "heading" and blocks[0].get("text"):
+                ch_title = blocks[0]["text"]
             # Reflowable only with usable text AND adequate confidence. A traditional engine
             # below the floor (or no text) -> facsimile; a VLM (conf=None) stays reflowable and
             # relies on the degeneracy guard + fidelity verifier instead.
             low_conf = conf is not None and conf < conf_floor
+            # A consensus rejection overrides a confident primary: self-reported confidence
+            # is exactly what fails on a fabricated page (fleet.md §11).
+            cons = consensus_by_idx.get(idx)
+            if cons is not None and not cons.trusted:
+                low_conf = True
+                counts["consensus_rejected"] += 1
             if raw.strip() and not low_conf:
-                blocks = _page_blocks(project, stem)
                 body, held = _cleaned_body(cfg, raw, use_llm, cleanup_endpoint, cleanup_model, blocks)
                 if held:
                     counts["held"] += 1
-                docs.append(SpineDoc(idx, f"Page {page_no}", OutputMode.REFLOWABLE,
-                                     page_number=page_no, body_xhtml=body))
+                doc = SpineDoc(idx, f"Page {page_no}", OutputMode.REFLOWABLE,
+                               page_number=page_no, body_xhtml=body)
                 counts["reflowable"] += 1
             else:  # low-confidence or un-OCR'd -> facsimile, keep OCR text as searchable layer
-                docs.append(SpineDoc(idx, f"Page {page_no}", OutputMode.FACSIMILE,
-                                     page_number=page_no, image_path=_image_for_page(project, page),
-                                     ocr_text=raw.strip() or None))
+                doc = SpineDoc(idx, f"Page {page_no}", OutputMode.FACSIMILE,
+                               page_number=page_no, image_path=_image_for_page(project, page),
+                               ocr_text=raw.strip() or None)
                 counts["facsimile"] += 1
+            page_docs.append((doc, ch_title))
         elif ptype in ("text", "mixed"):
             # Real text beats OCR (epubOCR.md §2). A born-digital PDF page carries its text in
             # the manifest; an EPUB `text`/`mixed` page is re-read from source. `mixed` pages
@@ -256,14 +355,39 @@ def build_book(project: BookProject, cfg: Config, *, use_llm: bool = False,
             # are preserved here rather than routed to OCR — which would emit a blank page.
             body = page.get("text_html") or (
                 _preserve_text_body(source_epub, page["href"]) if source_epub else "<p></p>")
-            docs.append(SpineDoc(idx, f"Page {page_no}", OutputMode.REFLOWABLE,
-                                 page_number=page_no, body_xhtml=body))
+            page_docs.append((SpineDoc(idx, f"Page {page_no}", OutputMode.REFLOWABLE,
+                                       page_number=page_no, body_xhtml=body), ch_title))
             counts["preserved"] += 1
 
-    out_path = build_epub(
-        docs, title=title or Path(manifest.get("epub") or manifest.get("source_file") or "book").stem,
-        output_path=project.output / "improved.epub")
-    return out_path, {"docs": len(docs), **counts}
+    sections = _group_sections(page_docs, book_title)
+    out_path = build_epub(sections, title=book_title,
+                          output_path=project.output / "improved.epub", stitch=not use_llm)
+    return out_path, {"docs": sum(len(s.docs) for s in sections), "sections": len(sections), **counts}
+
+
+def _group_sections(page_docs: list[tuple[SpineDoc, str | None]], book_title: str) -> list[Section]:
+    """Group per-page docs into spine documents so the text flows: a new Section at the cover
+    and at each chapter start (a page carrying a chapter title); consecutive pages otherwise
+    flow into one Section. With no chapter signal the whole body becomes a single flowing
+    Section (one document = no per-page break), which is what a book with no chapters gets.
+    """
+    sections: list[Section] = []
+
+    def open_section(t: str) -> Section:
+        sec = Section(id=f"sec{len(sections) + 1:04d}", title=t or book_title)
+        sections.append(sec)
+        return sec
+
+    cur: Section | None = None
+    for doc, ch_title in page_docs:
+        if doc.page_number is None:                 # cover / front-matter image -> standalone
+            open_section(ch_title or "Cover").docs.append(doc)
+            cur = None                              # force the next content page to open fresh
+            continue
+        if cur is None or ch_title is not None:     # chapter boundary -> new flowing document
+            cur = open_section(ch_title or book_title)
+        cur.docs.append(doc)
+    return sections or [Section(id="sec0001", title=book_title)]
 
 
 def _cleaned_body(cfg: Config, ocr_text: str, use_llm: bool,

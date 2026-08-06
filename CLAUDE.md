@@ -57,12 +57,13 @@ ingest → preprocess → ocr → (eval gate) → layout cleanup → llm cleanup
 | --------------------------- | ---------------------------------------------------------------------------------------------- |
 | `ingest.py`                 | `zipfile`+`lxml` over the OPF → `manifest.json`; classifies & extracts **page images**         |
 | `ingest_pdf.py`             | PDF front-end (PyMuPDF): same manifest — preserves text layers, extracts/renders scans         |
-| `ocr/` (`base.OCREngine`)   | Pluggable engines: `surya_marker`, `surya2`, `vlm_openai`, `tesseract`, `paddle`               |
+| `ocr/` (`base.OCREngine`)   | Pluggable engines: `surya_marker`, `surya2`, `chandra`, `vlm_openai`, `tesseract`, `paddle`     |
+| `ocr/pool.py`               | Fan one book's OCR across every free fleet unit (one model, N units)                           |
 | `structure.py`              | Surya layout boxes + lines → ordered semantic `Block`s (opt-in; headings/lists/tables)         |
 | `preprocess.py`             | Adaptive (conditional) Pillow/OpenCV steps — off by default; over-processing clean scans hurts |
 | `layout.py`                 | Deterministic cleanup: de-hyphenate, rejoin paragraphs, strip running heads/footers            |
 | `llm/`                      | OpenAI-compatible `client`, `cleanup` passes, and the `fidelity_verifier`                      |
-| `assemble.py`               | Per-page reflowable/facsimile XHTML → EPUB3 via EbookLib (`page-list` nav, pagebreak anchors)  |
+| `assemble.py`               | Pages → flowing chapter **sections** → EPUB3 (EbookLib); pagebreak anchors + `page-list` nav   |
 | `pipeline.py`               | `ocr_book` (batches cache-misses via `engine.run_batch`) and `build_book` — orchestration       |
 | `eval/`                     | `metrics` (CER/WER/insertion/repetition) + `harness` (engine comparison table)                 |
 | `consensus.py`              | Cross-engine agreement — a model-agnostic trust signal                                         |
@@ -81,13 +82,25 @@ OCR, the guards, per-page routing, and EPUB assembly never look at the original 
 path reuses them unchanged.
 
 **Fidelity is enforced by three distinct guards at different stages — do not conflate them:**
-1. **OCR-stage degeneracy guard** (`eval/metrics.is_degenerate` via `repetition_ratio`, applied in
-   `pipeline.ocr_book`): catches VLM repetition loops (`[illegible] [illegible]…`). A degenerate page
-   gets its text blanked so the builder routes it to facsimile.
+1. **OCR-stage degeneracy guard** (applied in `pipeline.ocr_book`), which is **two tests, and both
+   are needed**: `eval/metrics.is_degenerate` (via `repetition_ratio`) catches a single token looping
+   (`[illegible] [illegible]…`), and `eval/metrics.length_outliers` catches a page far longer than the
+   book's own median — a model looping over *varied* filler, or fabricating on a blank page, slips
+   under the repetition threshold entirely. Measured 2026-08-06 (see `fleet.md` §11): repetition
+   caught 1 of 12 PaddleOCR-VL failures, the length test caught 12/12 plus a Chandra blank-page
+   fabrication, with zero false positives over 359 pages x2 engines. Either verdict blanks the page's
+   text so the builder routes it to facsimile.
 2. **Cleanup-stage fidelity verifier** (`llm/fidelity_verifier.verify`, applied in `llm/cleanup`):
    compares LLM XHTML against the OCR text (CER / inserted-word ratio / length delta vs `[fidelity]`
    thresholds). On drift it **discards the LLM output and falls back** to deterministic cleanup.
-3. **Cross-engine consensus** (`consensus.assess`): trust a page where two independent engines agree.
+3. **Cross-engine consensus** (`consensus.assess`, opt-in via `build --consensus <engine>
+   --consensus-max-pages N`): a second engine re-transcribes the least-trusted reflowable
+   candidates (no-confidence pages first) and a page the two disagree on goes to facsimile.
+   **This is the only guard that catches a *confident* fabrication** — PaddleOCR-VL invented whole
+   pages at conf 0.95-0.98 against a 0.98 book mean, Chandra 12k chars on a blank page at conf 0.994.
+   `assess` therefore has a `hard_floor`: severe disagreement is decisive and a confident primary
+   cannot override it (the original implementation let it, which defeated the check precisely on the
+   pages that needed it).
 
 **Per-page adaptive routing** lives in `pipeline.build_book` (`conf_floor=0.80`). A scanned page is
 emitted **reflowable** only with usable text AND adequate confidence; otherwise **facsimile** (image +
@@ -97,6 +110,17 @@ and relies on the degeneracy guard + fidelity verifier instead of the floor. Sur
 per-block confidence on readable pages and `conf=None` + empty text on pages it can't read (covers,
 near-blank), which the floor/empty-text check routes to facsimile. `text` pages are preserved from the
 source (never re-OCR'd).
+
+**Continuous chapter-aware flow (`assemble.py`).** Readers force a visual break at every *spine
+document*, so one XHTML per scanned page reads as a break at every original page. `build_book` instead
+groups pages into `Section`s (one spine doc each): a new section at the cover and at each **chapter
+start**, consecutive pages otherwise flowing into one document. Chapter starts come from the embedded
+outline recorded at ingest (PDF `get_toc` / EPUB NCX → `manifest["outline"]`), or a layout heading
+(`layout=True`); with no signal the whole body is one flowing section. Page numbers stay navigable via
+inline `pagebreak` anchors + the `page-list` nav, and a paragraph split across a page boundary is
+**stitched** back into one `<p>` (anchor left inline) when the tail isn't sentence-final and the
+continuation is lowercase — conservative, deterministic-only (`stitch=not use_llm`), never crossing a
+chapter (section) boundary.
 
 **Config indirection is three levels:** `endpoints` (URLs) → `roles` (`vlm_ocr`, `text_cleanup` → an
 endpoint) → `models` (per-endpoint aliases, because Ollama tags `qwen2.5vl:7b` and vLLM served-names
@@ -143,6 +167,24 @@ the default build run fully local.
   (cache-stable — don't make it report the patch). Both are the same `surya-ocr` package at incompatible
   versions, so only one installs at a time (`[tool.uv].conflicts` locks them separately); each engine
   version-guards with a clear error.
+- **Multi-unit OCR (`ocr/pool.py`).** `[ocr] pool = "auto"` (or a list of unit ids) fans a book across
+  every free fleet unit already serving the model — `pool = "auto"` never triggers a cold load or evicts
+  anyone. **A pool is ONE model on N units**, enforced: members whose `identity()` disagrees are refused,
+  because the page cache is keyed on identity and a mixed pool could neither be re-run nor kept
+  stylistically consistent (comparing models is what `eval` is for). Three traps, all paid for once and
+  documented in `pool.py`: (a) `PoolEngine.preferred_batch` exists because `ocr_book`'s `_OCR_BATCH` (32)
+  <= the per-unit chunk means one worker takes everything and **the pool silently runs on one unit, with
+  no error**; (b) surya2 cannot attach through a `/lane/<unit>/v1` path — its attach compares the *first*
+  entry of `/v1/models`, so discovery prefers a node's own `host:port` (one model per Spark slot port);
+  (c) a unit reads `usage=active` for 60 s after its own last request, so an explicitly named unit only
+  needs to be *serving* the model, while `auto` keeps the stricter idle test.
+- **Per-unit rates are not unit speeds.** With a generative OCR model, time tracks *output tokens*, so a
+  fixed-size chunk is not a fixed-size unit of work — one pathological page (a 12k-char fabrication) made
+  one Spark look 4.7x slower than an identically-configured sibling. Read a pool's per-unit rate only
+  alongside output volume.
+- **Concurrency beats placement.** surya2 measured 21-32 s/page single-stream on a GB10 and **2.9 s/page**
+  on the same node at `surya2_parallel = 32`; a second unit then bought only 1.55x. Tune `*_parallel`
+  before adding hardware.
 - **Batched OCR (whole-book throughput).** `ocr_book` is 3-pass: build the page work-list + cache keys,
   `engine.run_batch` the cache-misses in chunks of `_OCR_BATCH` (32), then per-page write + degeneracy
   guard in spine order. `OCREngine.run_batch` defaults to sequential (`run` per page); `surya2`/`surya`
