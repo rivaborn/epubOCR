@@ -25,6 +25,13 @@ or **[predicted — bake-off #N]** (§10).
 >
 > What did survive: surya2 keeps the ground-truth slot; consensus is worth wiring in (it is,
 > now); and Sparks should host surya2 **co-resident**, not dedicated (§12).
+>
+> ⚠️ **The §1 fleet table is a snapshot, and it has already moved twice.** On 2026-08-06
+> PaddleOCR-VL took surya2's 3070 Ti slot (LLMConfig `0bc73d2`) and surya-ocr-2 gained a
+> 3090 `serve.sh` case plus recipes on all four Sparks; later the same day every unit was
+> serving `harrier-oss-06b`. **Do not hardcode a placement from this document** — that is
+> exactly what broke epubocr's config. Ask the fleet: `[ocr] pool = "auto"` finds whatever
+> is serving the model and loads it onto an idle unit if nothing is (§13).
 
 - **Bulk OCR: borrow the 3090.** `surya2` served from a 3090 vLLM slot is the measured
   5.23x batched path **[measured — commit `06cb7eb`, 2026-08-01]** with a measured
@@ -464,7 +471,44 @@ fidelity, not speed. **Adding Sparks does not change that ordering, and neither 
 raising `surya2_parallel`** — which is the strongest argument yet against dedicating whole
 Sparks to OCR (§9's recommendation stands: co-resident, discovered via `pool = "auto"`).
 
-## 13. Open questions — the bake-off list
+## 13. Placement is not stable — ask the fleet (2026-08-06, config change)
+
+Within one day surya-ocr-2 moved twice: it lost its always-resident 3070 Ti slot to
+PaddleOCR-VL (LLMConfig `0bc73d2`), gained a 3090 `serve.sh` case (`aca78f5`) and per-node
+Spark recipes (`4547e08`, `5700b3d`), and by evening every unit was serving something else
+entirely. The hardcoded `surya2_inference_url = .../lane/companion/v1` in this repo's
+config was silently wrong the moment the first of those landed — LLMConfig's own commit
+message flagged it: *"epubocr still points SURYA_INFERENCE_URL at :11438, which now answers
+as a different model under a different name."*
+
+**The fix is to stop naming a placement.** `config.local.toml` now carries::
+
+    pool = "auto"
+    pool_model = "surya-ocr-2"
+    pool_autoload = true
+    pool_autoload_units = 1
+
+`pool = "auto"` resolves at run time: units already serving the model, else **load it onto
+an idle one**. That last part is a deliberate reversal — the original `pool.py` refused to
+cold-load on principle, which is correct etiquette on a contended cluster and simply wrong
+here. **This fleet is idle >95% of the time and LLMConfig already arbitrates the rest**:
+leases carry priority, a higher-priority job displaces a lower one, and a displaced
+long-running job is restarted when a unit frees up. Against that, waiting for a human to
+hand-warm a model is a self-imposed limit, not politeness.
+
+Still refused, always: a unit mid-request (`usage=active`), one mid-swap, one under a
+**non-preemptible** lease. Those are real claims. Idleness is not.
+
+Fit is not re-derived client-side — the per-unit catalog's server-computed `addable` flag
+and its reason decide, so the pool cannot disagree with a real load refusal (LLMConfig
+learned the same lesson for its own UI gray-outs).
+
+⚠️ **Untested as of writing.** Written while the fleet was busy with an unrelated long
+job, so nothing here has been exercised against a live gateway: `autoload()`'s load →
+poll-for-residency path, and the `loadable_units()` catalog scan, are code-reviewed only.
+First run should be a `--limit 4` smoke test, not a book.
+
+## 14. Open questions — the bake-off list
 
 1. ~~**surya2 aggregate pages/min: companion vs 3090 vs a GB10 recipe**, sweeping
    parallel — does the GB10 ever cross the 3090?~~ **ANSWERED §11/§12 (2026-08-06):** a

@@ -16,9 +16,13 @@ worse, one book would mix two transcription styles. :func:`build_pool` therefore
 members whose ``identity()`` disagrees. Comparing *different* models is what the eval
 harness is for; this is for making one model go faster.
 
-Discovery (``pool = "auto"``) asks LLMConfig which units are free and already serving the
-model, so the pool never triggers a cold load or evicts someone else's work — an idle
-unit holding your model is free capacity; a busy one is not.
+Discovery (``pool = "auto"``) asks LLMConfig which units are usable: ones already serving
+the model first, and failing that it **loads the model onto an idle unit**. That fits this
+fleet specifically — the units are idle >95% of the time, and LLMConfig's leases already
+arbitrate contention (priority displaces, and a displaced long-running job restarts when a
+unit frees up), so refusing to cold-load would be a self-imposed limit rather than good
+manners. Never taken: a unit mid-request, one mid-swap, or one under a non-preemptible
+lease.
 """
 from __future__ import annotations
 
@@ -153,37 +157,62 @@ class PoolEngine(OCREngine):
 
 
 # --------------------------------------------------------------------------- discovery
+#
+# Fleet philosophy this implements: the LLM units are idle >95% of the time, and LLMConfig
+# already arbitrates the rest — leases carry priority, a higher-priority job displaces a
+# lower one, and the displaced job is restarted when a unit frees up. So a batch OCR run
+# is a legitimate tenant of an IDLE unit, not a guest that must find one already warmed.
+# An earlier version of this module refused to cold-load on principle; that was the right
+# rule for a contended fleet and the wrong one for this fleet, where it just meant epubocr
+# could not run at all unless somebody had hand-loaded the model first.
+#
+# What is still refused, always: a unit that is ACTIVE (someone is mid-request), one
+# mid-swap, and one holding a NON-PREEMPTIBLE lease. Those are real claims; idleness is not.
+
+def _get(gateway: str, path: str, timeout: float = 20.0):
+    import json
+    import urllib.request
+
+    with urllib.request.urlopen(f"{gateway.rstrip('/')}{path}", timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def _post(gateway: str, path: str, body: dict, timeout: float = 30.0):
+    import json
+    import urllib.request
+
+    req = urllib.request.Request(f"{gateway.rstrip('/')}{path}",
+                                 data=json.dumps(body).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def _usable(lane: dict, *, require_idle: bool) -> bool:
+    if not lane.get("reachable", True) or not lane.get("enabled", True):
+        return False
+    if lane.get("swap_in_progress"):
+        return False
+    if require_idle and lane.get("usage") == "active":
+        return False
+    lease = lane.get("lease") or {}
+    return not (lease and not lease.get("preemptible", True))
+
 
 def free_units(gateway: str, model: str, *, timeout: float = 15.0,
-               require_idle: bool = True) -> list[dict]:
-    """Units that are reachable, holding ``model``, and usable — capacity we can take
-    without a cold load or an eviction.
+               require_idle: bool = True, status: dict | None = None) -> list[dict]:
+    """Usable units **already serving** ``model``.
 
     ``require_idle`` skips units whose ``usage`` is ``active``. That is right for
     discovery (``pool = "auto"``): a busy unit is someone else's work. It is *wrong* for
     an explicitly named unit — ``active`` only means traffic within the gateway's 60 s
     window, so a unit you just finished using still reads active and naming it would
     fail for a minute after your own previous run.
-
-    A non-preemptible lease is always disqualifying: that is a real claim by another
-    caller, whichever way the unit was chosen.
     """
-    import json
-    import urllib.request
-
-    with urllib.request.urlopen(f"{gateway.rstrip('/')}/api/status", timeout=timeout) as r:
-        status = json.loads(r.read().decode("utf-8"))
-
+    status = status if status is not None else _get(gateway, "/api/status", timeout)
     out: list[dict] = []
     for lane in status.get("lanes", []):
-        if not lane.get("reachable", True) or not lane.get("enabled", True):
-            continue
-        if lane.get("swap_in_progress"):
-            continue
-        if require_idle and lane.get("usage") == "active":
-            continue
-        lease = lane.get("lease") or {}
-        if lease and not lease.get("preemptible", True):
+        if not _usable(lane, require_idle=require_idle):
             continue
         for m in (lane.get("loaded_models") or []):
             if m.get("model") == model:
@@ -191,6 +220,83 @@ def free_units(gateway: str, model: str, *, timeout: float = 15.0,
                             "port": m.get("port") or 0})
                 break
     return out
+
+
+def loadable_units(gateway: str, model: str, *, status: dict | None = None,
+                   exclude: set[str] | None = None) -> list[dict]:
+    """Idle units whose catalog can serve ``model`` right now, best first.
+
+    Fit is **not** re-derived here: each unit's catalog entry carries LLMConfig's own
+    server-side ``addable`` verdict and its reason (VRAM headroom, ``needs_empty_node``,
+    a multi-node recipe on a single node). Recomputing that in the client is how a
+    gray-out and a real load refusal end up disagreeing.
+
+    ``free`` units are preferred over merely ``idle`` ones: an idle unit holds someone's
+    model, and loading ours evicts it. Both are permitted — that is what the lease system
+    is for — but we spend the empty ones first.
+    """
+    status = status if status is not None else _get(gateway, "/api/status")
+    exclude = exclude or set()
+    out: list[dict] = []
+    for lane in status.get("lanes", []):
+        unit = lane.get("id")
+        if unit in exclude or not _usable(lane, require_idle=True):
+            continue
+        try:
+            cat = _get(gateway, f"/api/models?lane={unit}")
+        except Exception:  # noqa: BLE001 - a unit we cannot ask about is simply not a candidate
+            continue
+        entries = [e for group in ("spark", "vllm", "ollama") for e in (cat.get(group) or [])]
+        for e in entries:
+            if e.get("served_name") != model and e.get("alias") != model:
+                continue
+            if not e.get("addable", True):
+                continue
+            out.append({"unit": unit, "alias": e.get("alias") or model,
+                        "server": e.get("server") or ("spark" if lane.get("kind") == "spark"
+                                                      else "vllm"),
+                        "empty": not (lane.get("loaded_models") or [])})
+            break
+    out.sort(key=lambda u: not u["empty"])          # empty units first
+    return out
+
+
+def autoload(gateway: str, model: str, want: int, *, timeout_s: float = 900.0,
+             poll_s: float = 10.0, log=print) -> list[dict]:
+    """Ask LLMConfig to load ``model`` onto up to ``want`` idle units; return the ones
+    that came up, as ``free_units`` entries.
+
+    Loads are requested together and then awaited together — a Spark cold load runs into
+    minutes (>=250 s measured), so serializing them would multiply the wait by the number
+    of units for no reason.
+    """
+    import time
+
+    cands = loadable_units(gateway, model)[:max(1, want)]
+    if not cands:
+        return []
+    for c in cands:
+        log(f"[pool] loading {model} on {c['unit']} (idle)...")
+        try:
+            _post(gateway, "/api/load",
+                  {"server": c["server"], "model": c["alias"], "lane": c["unit"]})
+        except Exception as exc:  # noqa: BLE001
+            log(f"[pool] load request failed on {c['unit']}: {exc}")
+
+    wanted = {c["unit"] for c in cands}
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        # Residency is the only proof: a load returns a job id immediately, and
+        # `sparkrun stop`-style rc=0 lies mean the job's own status is not evidence.
+        got = [u for u in free_units(gateway, model, require_idle=False) if u["unit"] in wanted]
+        if len(got) >= len(wanted):
+            return got
+        time.sleep(poll_s)
+    got = [u for u in free_units(gateway, model, require_idle=False) if u["unit"] in wanted]
+    if got:
+        log(f"[pool] {len(got)}/{len(wanted)} unit(s) came up within {timeout_s:.0f}s; "
+            f"proceeding with those")
+    return got
 
 
 def _lane_url(gateway: str, unit: str) -> str:
@@ -227,6 +333,10 @@ def build_pool(config: Config, engine_name: str, *, make_engine) -> PoolEngine:
         pool = "auto"                    # or a list of unit ids: ["spark1", "spark2"]
         pool_gateway = "http://192.168.1.40:11430"
         pool_model = "surya-ocr-2"       # served name to look for / request
+        pool_autoload = true             # load onto an idle unit when nothing serves it
+        pool_autoload_units = 1          # how many idle units to load onto
+        pool_max_units = 4               # cap on members when several already serve it
+        pool_load_timeout_s = 900        # a Spark cold load runs into minutes
         pool_urls = ["http://192.168.1.50:8000/v1", ...]   # explicit, bypasses discovery
     """
     ocr = config.raw.get("ocr", {}) or {}
@@ -241,7 +351,13 @@ def build_pool(config: Config, engine_name: str, *, make_engine) -> PoolEngine:
             members.append((f"u{i}", make_engine(url, model)))
     else:
         if spec == "auto" or spec is True:
-            found = free_units(gateway, model)
+            found = free_units(gateway, model)[:int(ocr.get("pool_max_units", 4))]
+            if not found and ocr.get("pool_autoload", True):
+                # Nothing resident. On this fleet that is the NORMAL state (units idle
+                # >95% of the time), not an error — ask LLMConfig to load onto an idle
+                # unit. Displacement, priority and restart are the lease system's job.
+                found = autoload(gateway, model, int(ocr.get("pool_autoload_units", 1)),
+                                 timeout_s=float(ocr.get("pool_load_timeout_s", 900)))
         elif isinstance(spec, list):
             # Explicitly named: only require that the unit actually serves the model.
             avail = {u["unit"]: u for u in free_units(gateway, model, require_idle=False)}
@@ -256,8 +372,10 @@ def build_pool(config: Config, engine_name: str, *, make_engine) -> PoolEngine:
                 f"[ocr] pool must be \"auto\", a list of unit ids, or use pool_urls; got {spec!r}")
         if not found:
             raise RuntimeError(
-                f"no free unit is serving '{model}' — load it on a unit, or set "
-                f"[ocr] pool_urls to address servers directly")
+                f"no unit is serving '{model}' and none could be loaded — every unit is "
+                f"busy, mid-swap, non-preemptibly leased, or cannot fit it. Load it by "
+                f"hand (`llmconfig load ...`), set [ocr] pool_urls to address a server "
+                f"directly, or raise [ocr] pool_autoload_units.")
         for u in found:
             members.append((u["unit"], make_engine(unit_url(gateway, u, direct=direct), model)))
 

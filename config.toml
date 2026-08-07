@@ -51,18 +51,27 @@ default_engine = "surya2"                            # Surya 2 served-VLM; needs
 layout         = false                               # opt-in: extract headings/lists/tables/reading order (Surya layout)
 surya2_backend = "vllm"                              # backend for the 'surya2' engine: llamacpp | vllm
 surya2_max_tokens = 6144                             # full-page generation cap (runaway guard); real pages stay well under
-# surya2_parallel = 32                               # concurrent requests per batched OCR call. Measured on a 3090: ~1.8x
-#                                                    #   over 8; plateau 24-48 (knee ~24), 64 regresses. Tune to your server.
-# vllm backend: attach to an already-running OpenAI-compatible vLLM server (no local
-# binary). Point at the IP literal, not localhost. The model name MUST equal that
-# server's served name (Surya's attach path rejects a mismatch).
-# Since 2026-07-31 surya2 is ALWAYS RESIDENT on the 3070 Ti as an LLMConfig
-# companion slot; this URL is the LLMConfig gateway, which resolves the
-# fleet-unique served name onto that slot (auto-load included). Fallback if
-# 32-parallel throughput suffers through the proxy: the slot's direct relay
-# at http://192.168.1.40:11438/v1 (needs the relay bound to 0.0.0.0 + a
-# firewall rule first — the :11435 companion-Ollama precedent).
-surya2_inference_url = "http://192.168.1.40:11430/lane/companion/v1"
+# surya2_parallel = 32                               # concurrent requests per batched OCR call. Measured knee is 32 on BOTH
+#                                                    #   a 3090 (plateau 24-48, 64 regresses) and a GB10 (flat 48-128, no
+#                                                    #   regression). 32 captures ~96% of the available gain. Tune per server.
+
+# --- TWO WAYS TO REACH A SERVED surya2 -----------------------------------------------
+# (a) A FLEET (recommended if you run an LLMConfig gateway). The pool finds every usable
+#     unit serving the model, fans the book across them, and — with pool_autoload — loads
+#     the model onto an idle unit when none is serving it. Prefer this over naming a lane:
+#     a model's placement moves, and a hardcoded URL breaks silently when it does.
+# pool = "auto"                                      # or ["spark1","spark2"]
+# pool_model = "surya-ocr-2"                         # the server's --served-model-name
+# pool_gateway = "http://127.0.0.1:11430"
+# pool_autoload = true                               # load onto an idle unit if none serves it
+# pool_autoload_units = 1                            # cold loads cost minutes; a 2nd unit buys ~1.55x
+# pool_chunk = 32                                    # pages per unit per call; keep >= surya2_parallel
+#
+# (b) ONE SERVER. Attach to an already-running OpenAI-compatible vLLM (no local binary).
+#     Point at the IP literal, not localhost. The model name MUST equal that server's
+#     served name, and it must be the FIRST /v1/models entry — Surya's attach path
+#     compares only the first, so a multi-model gateway catalog will not do.
+surya2_inference_url = "http://127.0.0.1:8000/v1"
 surya2_model         = "surya-ocr-2"                  # the server's --served-model-name
 
 # Fidelity verifier thresholds (§7). A cleaned page that drifts past these is held for QA.

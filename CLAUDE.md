@@ -152,10 +152,13 @@ the default build run fully local.
 - **Two Surya engines, mutually exclusive; `surya2` is the default.** `surya2` (`surya2.Surya2Engine`)
   = **Surya 2 (≥0.20)**, a served-VLM needing a vllm/llama.cpp backend (`[ocr] surya2_backend`). Two
   ways to feed it: a local `llama-server` binary via `LLAMA_CPP_BINARY` (offline, on the 4060), or —
-  the validated default on this setup — `surya2_backend = "vllm"` + `surya2_inference_url` +
-  `surya2_model` to **attach** to an already-running vLLM (the homelab 3090 relay serves `surya-ocr-2`;
-  load it with `llmconfig load vllm surya2`). Surya's attach path rejects a served-name mismatch, so
-  `surya2_model` must equal the server's `--served-model-name`. The vLLM path is faster per page and
+  the validated default on this setup — `surya2_backend = "vllm"` attaching to an already-running
+  vLLM. **Do not hardcode a lane**: `surya-ocr-2` moves around the fleet (it had a 3070 Ti slot until
+  PaddleOCR-VL took it on 2026-08-06, LLMConfig `0bc73d2`, which silently broke the URL that was
+  pinned here). Use `[ocr] pool = "auto"` + `pool_model`, which finds whichever unit serves it and
+  loads one if none does; `surya2_inference_url` + `surya2_model` remain as the single-server path.
+  Surya's attach path rejects a served-name mismatch, so the model name must equal the server's
+  `--served-model-name`. The vLLM path is faster per page and
   reads at full bf16 precision; the engine sets these on Surya's settings singleton in `_ensure_loaded`. It is the default on **fidelity**
   grounds — validated on a real 1965 scan it matched/beat 0.17 on clean prose, was cleaner on marginal
   pages, and returned **empty (not hallucinated)** text on unreadable pages — but it is **~6-10x slower**
@@ -168,8 +171,12 @@ the default build run fully local.
   versions, so only one installs at a time (`[tool.uv].conflicts` locks them separately); each engine
   version-guards with a clear error.
 - **Multi-unit OCR (`ocr/pool.py`).** `[ocr] pool = "auto"` (or a list of unit ids) fans a book across
-  every free fleet unit already serving the model — `pool = "auto"` never triggers a cold load or evicts
-  anyone. **A pool is ONE model on N units**, enforced: members whose `identity()` disagrees are refused,
+  every usable fleet unit serving the model, and with `pool_autoload` (default on) **loads it onto an
+  idle unit when none is serving it** — right for this fleet, where units idle >95% of the time and
+  LLMConfig's leases already handle priority displacement and restart-when-idle. It still never takes a
+  unit that is mid-request, mid-swap, or under a non-preemptible lease. Fit is never re-derived in the
+  client: the per-unit catalog's server-side `addable` verdict decides, so a gray-out and a real load
+  refusal cannot disagree. **A pool is ONE model on N units**, enforced: members whose `identity()` disagrees are refused,
   because the page cache is keyed on identity and a mixed pool could neither be re-run nor kept
   stylistically consistent (comparing models is what `eval` is for). Three traps, all paid for once and
   documented in `pool.py`: (a) `PoolEngine.preferred_batch` exists because `ocr_book`'s `_OCR_BATCH` (32)
