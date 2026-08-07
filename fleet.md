@@ -10,6 +10,22 @@ or **[predicted — bake-off #N]** (§10).
 
 ## TL;DR — the calls
 
+> ⚠️ **§1–§9 are the analysis as written BEFORE anything was measured. §10–§12 measured it,
+> and three of the calls below did not survive.** Read the bullets as the reasoning, not the
+> conclusions:
+>
+> * **"a GB10 only maybe wins at batch >=128, which the client can't currently drive"** —
+>   wrong twice. The knee is **32**, the client drives it today, and a GB10 does 2.3 s/page
+>   (§12). The bandwidth arithmetic in §4 under-modelled prefill and over-modelled decode.
+> * **"PaddleOCR-VL is the bulk winner"** (implied by its 0.60 s/page in §11) — it is
+>   **disqualified on fidelity**: it silently corrupts 3.3 % of pages at normal confidence,
+>   under both existing guards (§11).
+> * **"Chandra is the strongest challenger candidate"** (§4) — it fabricates on unreadable
+>   pages at conf 0.994 (§11), so it cannot be trusted where a challenger is most needed.
+>
+> What did survive: surya2 keeps the ground-truth slot; consensus is worth wiring in (it is,
+> now); and Sparks should host surya2 **co-resident**, not dedicated (§12).
+
 - **Bulk OCR: borrow the 3090.** `surya2` served from a 3090 vLLM slot is the measured
   5.23x batched path **[measured — commit `06cb7eb`, 2026-08-01]** with a measured
   concurrency sweet spot of 32 **[measured — `config.toml:54`]**. The companion (3070 Ti)
@@ -364,13 +380,100 @@ that no guard in the pipeline currently detects.
   (`pool = "auto"`) still skips busy units — that is the point — but an explicit list now
   only requires that the unit serve the model.
 
-## 12. Open questions — the bake-off list
+## 12. Measured 2026-08-06 (later still) — the `surya2_parallel` sweep (answers #1/#2)
 
-1. **surya2 aggregate pages/min: companion vs 3090 vs a GB10 recipe**, sweeping parallel
-   32/64/128/256 — does the GB10 ever cross the 3090? (The central prediction of §3 to
-   falsify.)
+§11 left the obvious question open: if concurrency is worth ~10x and a second *unit* only
+1.55x, **how far does concurrency go?** Swept on **spark3 with `surya-ocr-2` as its only
+resident model**, so nothing else on the node contends.
+
+Method (it decides whether the numbers mean anything): the same 128 pages in the same
+order for every setting, evenly spaced across the book, decoded once up front and excluded
+from the timing; one engine instance re-tuned between runs (the backend reads
+`SURYA_INFERENCE_PARALLEL` at `generate()` time, so no setting pays a reconnect the others
+do not); a warm-up batch before the first measured run, so `parallel=8` is not charged for
+warming the server and made to look artificially bad — which would manufacture a scaling
+curve out of nothing. Sample >= max parallel, or 128-way concurrency could not be exercised.
+
+### The Mustee (clean 1968 scan), 128 pages
+
+| parallel | wall  | s/page | pages/s | vs p8  | marginal |
+| -------- | ----- | ------ | ------- | ------ | -------- |
+| 8        | 583.4 | 4.558  | 0.219   | 1.00x  | —        |
+| 16       | 433.4 | 3.386  | 0.295   | 1.35x  | 1.35x    |
+| 24       | 340.7 | 2.661  | 0.376   | 1.71x  | 1.27x    |
+| **32**   | 309.1 | 2.415  | 0.414   | 1.89x  | 1.11x    |
+| 48       | 297.0 | 2.320  | 0.431   | 1.96x  | 1.04x    |
+| 64       | 296.7 | 2.318  | 0.431   | 1.97x  | 1.00x    |
+| 96       | 298.9 | 2.335  | 0.428   | 1.95x  | 0.99x    |
+| 128      | 294.7 | 2.303  | 0.434   | 1.98x  | 1.01x    |
+
+🔴 **It does not keep scaling. The knee is 32 and everything from 48 up is one flat line**
+(48/64/96/128 span 294.7–298.9 s — a **1.4 %** spread, i.e. noise). Total available gain
+over `parallel=8` is **1.98x**, of which `parallel=32` already captures **96 %**. The
+current `[ocr] surya2_parallel = 32` is correctly placed; 48 is defensible for ~4 %, and
+anything above that is measuring the weather.
+
+Two secondary findings:
+
+* **The GB10 tolerates over-subscription; the 3090 does not.** `config.toml:54` records
+  the 3090 *regressing* at 64. Here 128 concurrent requests perform like 48 — you gain
+  nothing, but you are not punished either, so the setting is not a cliff on a Spark.
+* **Output was byte-stable across settings** (257,489–257,491 chars over 128 pages, 0
+  empty), which is the control: the timing differences are concurrency and nothing else.
+
+⚠️ **Do not read a sweep's argmax as its answer.** The script first reported
+*"best: parallel=128"* — a true argmax over a plateau whose spread was 1.4 %, which reads
+as "still scaling" and is false. It now reports the **knee** (cheapest setting within 3 %
+of peak) instead, which is the number an operator actually needs.
+
+### This Town (badly faded scan) — NOT RUN, and the reason is itself a result
+
+Started under the same protocol and **abandoned during the first setting**. It is recorded
+here rather than dropped, because the partial observation matters more than the table would
+have:
+
+⚠️ **A faded scan is at least 2.3x slower per page than a clean one at identical settings.**
+`parallel=8` on 128 *This Town* pages was still running at **22 minutes** when it was
+stopped; the same setting on 128 *Mustee* pages finished in **9.7 minutes**. Extrapolated,
+the full 8-setting sweep was tracking 2–2.5 h against Mustee's ~45 min.
+
+The cause is the one this document keeps rediscovering: **generative OCR costs output
+tokens, not pages.** *This Town* is ~88 % sub-0.60-confidence pages
+([comparison.md](comparison.md)), and on a page it cannot read surya2 churns toward
+`SURYA_MAX_TOKENS_FULL_PAGE` (6144) instead of terminating early — the same effect that made
+one Spark look 4.7x slower than an identical sibling in §11.
+
+Two practical consequences that do not need the table:
+
+* **Budget whole-book OCR by scan quality, not page count.** A 536-page faded book is not
+  "1.5x a 359-page clean book"; on this evidence it is several times the work.
+* **`surya2_max_tokens` is the lever for a faded book, not `surya2_parallel`.** Concurrency
+  cannot help a page that is expensive because it generates 6k tokens of nothing; lowering
+  the cap bounds the damage directly. Worth a sweep of its own (bake-off #10).
+
+**Still open:** whether the *knee* moves on faded input. Nothing here answers that — only
+that the whole curve shifts down. If it is ever run, trim to `8/32/64/128`; the Mustee
+sweep already established the curve's shape, so four points suffice to locate the knee.
+
+### What it means for placement
+
+Combined with §11: a single GB10 saturates at ~**2.3 s/page** and a second unit buys
+1.55x, so the realistic floor for surya2 on Sparks is ~**1.5 s/page across two nodes** —
+still ~2.5x slower than PaddleOCR-VL alone on the 3090 (0.60 s/page), which is out on
+fidelity, not speed. **Adding Sparks does not change that ordering, and neither does
+raising `surya2_parallel`** — which is the strongest argument yet against dedicating whole
+Sparks to OCR (§9's recommendation stands: co-resident, discovered via `pool = "auto"`).
+
+## 13. Open questions — the bake-off list
+
+1. ~~**surya2 aggregate pages/min: companion vs 3090 vs a GB10 recipe**, sweeping
+   parallel — does the GB10 ever cross the 3090?~~ **ANSWERED §11/§12 (2026-08-06):** a
+   GB10 saturates at ~2.3 s/page (knee at parallel=32, flat to 128); two nodes reach
+   ~1.5 s/page. It does **not** cross the 3090 on speed. Still open: the *companion*
+   slot's own curve, which §10's 8 GB/ctx-12288 note predicts is the tightest of the three.
 2. **Companion's real concurrency ceiling** — ctx 12288 / KV-slot arithmetic vs
-   `parallel=32`: how much of the fan-out actually queues?
+   `parallel=32`: how much of the fan-out actually queues? (The §12 sweep covered a GB10
+   only; the 8 GB slot is the case most likely to be over-subscribed.)
 3. **vl32 seconds/page on the dedicated 3090** — retire or confirm the 3–4 min/page
    CPU-offload-era number.
 4. **Cleanup three-way** on the gold set: verifier hold rate + XHTML validity + tok/s,
@@ -382,6 +485,13 @@ that no guard in the pipeline currently detects.
    staging time to spark4?
 8. **Can LLMConfig round-robin one served name across lanes?** That would unblock 4-Spark
    sharding with zero client changes.
+10. **`surya2_max_tokens` on a faded scan** — the §12 abort says a faded book is >=2.3x
+    slower per page because unreadable pages churn to the 6144-token cap. Sweep the cap
+    (2048/3072/4096/6144) on *This Town* against CER on its gold pages: how much wall clock
+    does a lower ceiling buy, and at what page does it start truncating real text?
+11. **Does the concurrency knee move on faded input?** The §12 sweep covered a clean scan
+    only. Trim to 8/32/64/128 if run.
+
 9. **Chandra-OCR-2 on the gold set** (`epubocr eval`): CER/WER vs surya2 and
    qwen2.5-vl-32b, *especially* on faded pages — does it stay empty rather than fluent on
    unreadable input, and can vLLM logprobs yield a usable confidence proxy? A win here
