@@ -1,0 +1,68 @@
+{
+ "The_Mustee": {
+  "8": {
+   "wall": 583.4,
+   "s_per_page": 4.558,
+   "pages_per_s": 0.219,
+   "chars": 257490,
+   "empty": 0,
+   "n": 128
+  },
+  "16": {
+   "wall": 433.4,
+   "s_per_page": 3.386,
+   "pages_per_s": 0.295,
+   "chars": 257489,
+   "empty": 0,
+   "n": 128
+  },
+  "24": {
+   "wall": 340.7,
+   "s_per_page": 2.661,
+   "pages_per_s": 0.376,
+   "chars": 257490,
+   "empty": 0,
+   "n": 128
+  },
+  "32": {
+   "wall": 309.1,
+   "s_per_page": 2.415,
+   "pages_per_s": 0.414,
+   "chars": 257490,
+   "empty": 0,
+   "n": 128
+  },
+  "48": {
+   "wall": 297.0,
+   "s_per_page": 2.32,
+   "pages_per_s": 0.431,
+   "chars": 257489,
+   "empty": 0,
+   "n": 128
+  },
+  "64": {
+   "wall": 296.7,
+   "s_per_page": 2.318,
+   "pages_per_s": 0.431,
+   "chars": 257491,
+   "empty": 0,
+   "n": 128
+  },
+  "96": {
+   "wall": 298.9,
+   "s_per_page": 2.335,
+   "pages_per_s": 0.428,
+   "chars": 257491,
+   "empty": 0,
+   "n": 128
+  },
+  "128": {
+   "wall": 294.7,
+   "s_per_page": 2.303,
+   "pages_per_s": 0.434,
+   "chars": 257490,
+   "empty": 0,
+   "n": 128
+  }
+ }
+}

@@ -219,3 +219,16 @@ them) and the `eval` harness against a hand-keyed gold JSON (`{page_index: groun
 `scripts/bakeoff.py` compares
 Surya raw/contrast/binarize + a VLM challenger on a page sample and writes only to `qa/` — never the
 main `ocr/`. EPUBCheck (`validate.epubcheck`) needs a JRE + the 5.x jar via `$EPUBCHECK_JAR`.
+
+**Gold sets are the only absolute accuracy reference and are expensive to make** — key them by hand
+from the page images, *as printed* (keep the original hyphenation and quote characters; record a
+blank page as `""`, which is what proves an engine stays silent instead of fabricating). Two exist:
+`tests/fixtures/sample.gold.json` (synthetic fixture) and `tests/fixtures/mustee.gold.json` (4 pages
+of a real 1968 scan, incl. one blank). Re-key rather than guess if one is lost.
+
+**A 4-page gold set cannot find a 3 %-of-the-book failure.** Both engine disasters this repo has
+measured were invisible to gold-set CER and only showed up over a whole book: PaddleOCR-VL
+degenerating on 12 of 359 pages, and Chandra fabricating on a blank page. When judging an engine,
+run the book and check the *distribution* — `benchmarks/2026-08-06-fleet/score_runs.py` is the
+worked example (gold CER + confidence spread + cross-engine agreement + over-production), and
+`benchmarks/2026-08-06-fleet/` holds that session's raw data behind `fleet.md` §10-§13.

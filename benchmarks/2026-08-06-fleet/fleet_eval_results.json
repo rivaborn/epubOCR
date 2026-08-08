@@ -1,0 +1,158 @@
+{
+ "surya2@spark3": {
+  "4": {
+   "text": "Foreword\n\nMany words are used so commonly today that their original derivation and meaning have been entirely lost. Everyone is familiar with the word mulatto, which has come to mean any person of mixed white and Negro blood. Few realise, however, that it is derived from the Spanish word mulo, meaning mule. Just as the mule is a hybrid of mixed blood – that of a horse and a jackass – so was the term originally applied to a man (for mulatto is masculine in Spanish) who was the offspring of a white father and a Negro mother. The chance of a mating between a Negro man and a white woman was so entirely out of the question that it was not even considered. So too do we go back to Spanish for the word mestizo, which was used to signify a person whose coloured blood was so considerably attenuated that in some cases it was scarcely discernible. Although the word mulatto remained unchanged in its journey from Cuba to the United States, the word mestizo was anglicised to mustee and, during slave times in the southern United States, it came to signify a white or nearly white Negro, such as an octoroon. Regardless of the whiteness of skin or fineness of features, the mustee was still a Negro and, unless he had been manumitted, still a bondsman.\n\nL.H.",
+   "mean_conf": 0.9933892686142668,
+   "secs": 26.6,
+   "cer": 0.0063,
+   "wer": 0.0345,
+   "insertion": 0.0132,
+   "cer_folded": 0.0048
+  },
+  "5": {
+   "text": "",
+   "mean_conf": null,
+   "secs": 0.9,
+   "cer": 0.0,
+   "wer": 0.0,
+   "insertion": 0.0,
+   "cer_folded": 0.0
+  },
+  "6": {
+   "text": "1\n\nTHE cold drizzle had started during the night and by morning, with the rising of the wind, it had settled down to a steady downpour, which beat at the scraggly chrysanthemums and the late asters that struggled for survival around the front steps of the big house at Falconhurst Plantation. It flattened their torn petals down into the mud and marked their doom for another season. A curtain of water fell from the roof of the long gallery, spattering into the rain barrels that Lucretia Borgia had had the boys place outside. Rain water was soft for washing clothes, and she never missed an opportunity to fill her barrels against next week's wash day. The row of rush-bottomed chairs had been tip-tilted up against the wall of the house but so great was the force of the storm that they were already dripping water.\n\nInside, however, it was warm and comfortable. A log fire burned in the brick fireplace of the dining-room. and an iron tea-kettle sang on the hob, lifting its heavy lid at regular intervals to let off the steam. Warren Maxwell, owner of Falconhurst, sat at the breakfast table, surveying the dirty dishes that had not been cleared away. He was unmindful of the congealing ham fat and the yellow tracery of fried eggs on his plate, the coffee grounds in his cup, and the rumpled red and white tablecloth. Minute by minute his anger mounted.\n\n7",
+   "mean_conf": 0.9925936071848804,
+   "secs": 21.0,
+   "cer": 0.0022,
+   "wer": 0.0165,
+   "insertion": 0.0041,
+   "cer_folded": 0.0022
+  },
+  "7": {
+   "text": "'Goddam that Lucretia Borgia!' He brought his fist down heavily on the table, making the plates and even the tin coffee-pot jump, and then winced from the ensuing pain. 'Ain' she a-knowin' I cain' git up by myself? Where she at anyhow? 'N where's Memnon 'n where's that goddam li'l squirt Jude? Ain' nobody goin' to pay no 'tention to me? Lucretia Borgia!' He cupped one hand around his mouth and bellowed. 'Where yo', Lucretia Borgia, yo' black bitch yo'? 'N where yo', Memnon, 'n yo', Jude? Git in here quick or by God a'mighty, I'll hang yo' up 'n have the meat stripped right off'n yore bones. Kin do it too.'\n\n'Yo' a-callin' me, Masta Warren suh?' A rich female voice floated in from the kitchen.\n\n'Co'se I'm callin' yo'. What in hell yo' think I'm a-hollerin' for? 'N where's that worthless Memnon at 'n that idiot Jude?'\n\n'Memnon he jes' histed hisself out to de barn for to fetch me the saleratus what was left in the wagon yisterday when he comed home from Benson. Jude he a-gone upstairs to fetch hot water for Ellen so's she kin wash Miz Sophie 'fore she gits her dressed. What yo' wan', Masta Warren suh?'\n\n'Wants to git up from this goddam table, tha's what I wan'. Wan' to git me into the rockin' chair before the fire in the settin' room. Wan' me a good hot toddy. Wan' Ellen down here 'n wan' li'l Miz Sophie here. Lotsa things I'm wantin' 'n here I set.'\n\nA colossal female appeared in the kitchen door. Her hugeness was not merely corpulence, although she was big-girthed, but she was big all over – statuesque and commanding. Junoesque might be the word to describe her, although it would have to be a black Juno. Her colour was a warm tobacco brown, betokening some distant effusion of white blood, and her nose and lips, although distinctly Negroid, were not those of a flat-faced Bush Negro. She was probably a mixture of Fan and Jaloff with possibly some Sudanese thrown in, which would account for her height and size. The rough butternut-brown osnaburg dress she was wearing strained to enfold the huge, melon-shaped breasts but it was clean and the apron she wore over it was white and stiffly starched. A length of bright red calico was bound around her head and the gold earrings that twinkled in her ears testified to the special position she held in this household.\n\n'Po' Masta Warren!' There was genuine solicitude in her\n\n8",
+   "mean_conf": 0.9933646657147269,
+   "secs": 32.4,
+   "cer": 0.0009,
+   "wer": 0.0071,
+   "insertion": 0.0,
+   "cer_folded": 0.0004
+  }
+ },
+ "chandra@spark3": {
+  "4": {
+   "text": "<div data-bbox=\"16 380 270 418\" data-label=\"Section-Header\"><h1>Foreword</h1></div><div data-bbox=\"12 451 987 944\" data-label=\"Text\"><p>Many words are used so commonly today that their original derivation and meaning have been entirely lost. Everyone is familiar with the word <i>mulatto</i>, which has come to mean any person of mixed white and Negro blood. Few realise, however, that it is derived from the Spanish word <i>mulo</i>, meaning mule. Just as the mule is a hybrid of mixed blood – that of a horse and a jackass – so was the term originally applied to a man (for mulatto is masculine in Spanish) who was the offspring of a white father and a Negro mother. The chance of a mating between a Negro man and a white woman was so entirely out of the question that it was not even considered. So too do we go back to Spanish for the word <i>mestizo</i>, which was used to signify a person whose coloured blood was so considerably attenuated that in some cases it was scarcely discernible. Although the word <i>mulatto</i> remained unchanged in its journey from Cuba to the United States, the word <i>mestizo</i> was anglicised to <i>mustee</i> and, during slave times in the southern United States, it came to signify a white or nearly white Negro, such as an octooroon. Regardless of the whiteness of skin or fineness of features, the mustee was still a Negro and, unless he had been manumitted, still a bondsman.</p></div><div data-bbox=\"872 939 950 962\" data-label=\"Text\"><p>L.H.</p></div>",
+   "mean_conf": null,
+   "secs": 23.1,
+   "cer": 0.199,
+   "wer": 0.1379,
+   "insertion": 0.2,
+   "cer_folded": 0.1975,
+   "cer_md_stripped": 0.0071
+  },
+  "5": {
+   "text": "",
+   "mean_conf": null,
+   "secs": 1.3,
+   "cer": 0.0,
+   "wer": 0.0,
+   "insertion": 0.0,
+   "cer_folded": 0.0,
+   "cer_md_stripped": 0.0
+  },
+  "6": {
+   "text": "<div data-bbox=\"693 332 723 386\" data-label=\"Section-Header\"><h1>1</h1></div><div data-bbox=\"18 417 986 726\" data-label=\"Text\"><p>THE cold drizzle had started during the night and by morning, with the rising of the wind, it had settled down to a steady downpour, which beat at the scraggly chrysanthemums and the late asters that struggled for survival around the front steps of the big house at Falconhurst Plantation. It flattened their torn petals down into the mud and marked their doom for another season. A curtain of water fell from the roof of the long gallery, spattering into the rain barrels that Lucretia Borgia had had the boys place outside. Rain water was soft for washing clothes, and she never missed an opportunity to fill her barrels against next week's wash day. The row of rush-bottomed chairs had been tip-tilted up against the wall of the house but so great was the force of the storm that they were already dripping water.</p></div><div data-bbox=\"19 725 986 940\" data-label=\"Text\"><p>Inside, however, it was warm and comfortable. A log fire burned in the brick fireplace of the dining-room. and an iron tea-kettle sang on the hob, lifting its heavy lid at regular intervals to let off the steam. Warren Maxwell, owner of Falconhurst, sat at the breakfast table, surveying the dirty dishes that had not been cleared away. He was unmindful of the congealing ham fat and the yellow tracery of fried eggs on his plate, the coffee grounds in his cup, and the rumpled red and white tablecloth. Minute by minute his anger mounted.</p></div><div data-bbox=\"489 953 511 973\" data-label=\"Page-Footer\"><p>7</p></div>",
+   "mean_conf": null,
+   "secs": 24.2,
+   "cer": 0.2003,
+   "wer": 0.1111,
+   "insertion": 0.1833,
+   "cer_folded": 0.2003,
+   "cer_md_stripped": 0.0044
+  },
+  "7": {
+   "text": "<div data-bbox=\"22 12 963 273\" data-label=\"Text\"><p>'Goddam that Lucretia Borgia!' He brought his fist down heavily on the table, making the plates and even the tin coffee-pot jump, and then winced from the ensuing pain. 'Ain' she a-knowin' I cain' git up by myself? Where she at anyhow? 'N where's Memnon 'n where's that goddam li'l squirt Jude? Ain' nobody goin' to pay no 'tention to me? Lucretia Borgia!' He cupped one hand around his mouth and bellowed. 'Where yo', Lucretia Borgia, yo' black bitch yo'? 'N where yo', Memnon, 'n yo', Jude? Git in here quick or by God a'mighty, I'll hang yo' up 'n have the meat stripped right off'n yore bones. Kin do it too.'</p></div><div data-bbox=\"25 274 963 321\" data-label=\"Text\"><p>'Yo' a-callin' me, Masta Warren suh?' A rich female voice floated in from the kitchen.</p></div><div data-bbox=\"25 321 963 370\" data-label=\"Text\"><p>'Co'se I'm callin' yo'. What in hell yo' think I'm a-hollerin' for? 'N where's that worthless Memnon at 'n that idiot Jude?'</p></div><div data-bbox=\"25 370 965 490\" data-label=\"Text\"><p>'Memnon he jes' histed hisself out to de barn for to fetch me the saleratus what was left in the wagon yisterday when he comed home from Benson. Jude he a-gone upstairs to fetch hot water for Ellen so's she kin wash Miz Sophie 'fore she gits her dressed. What yo' wan', Masta Warren suh?'</p></div><div data-bbox=\"25 489 963 586\" data-label=\"Text\"><p>'Wants to git up from this goddam table, tha's what I wan'. Wan' to git me into the rockin' chair before the fire in the settin' room. Wan' me a good hot toddy. Wan' Ellen down here 'n wan' li'l Miz Sophie here. Lotsa things I'm wantin' 'n here I set.'</p></div><div data-bbox=\"25 586 968 944\" data-label=\"Text\"><p>A colossal female appeared in the kitchen door. Her hugeness was not merely corpulence, although she was big-girthed, but she was big all over – statuesque and commanding. Junoesque might be the word to describe her, although it would have to be a black Juno. Her colour was a warm tobacco brown, betokening some distant effusion of white blood, and her nose and lips, although distinctly Negroid, were not those of a flat-faced Bush Negro. She was probably a mixture of Fan and Jaloff with possibly some Sudanese thrown in, which would account for her height and size. The rough butternut-brown osnaburg dress she was wearing strained to enfold the huge, melon-shaped breasts but it was clean and the apron she wore over it was white and stiffly starched. A length of bright red calico was bound around her head and the gold earrings that twinkled in her ears testified to the special position she held in this household.</p></div><div data-bbox=\"61 943 967 967\" data-label=\"Text\"><p>'Po' Masta Warren!' There was genuine solicitude in her</p></div><div data-bbox=\"489 981 508 1000\" data-label=\"Page-Footer\"><p>8</p></div>",
+   "mean_conf": null,
+   "secs": 47.7,
+   "cer": 0.2158,
+   "wer": 0.12,
+   "insertion": 0.1906,
+   "cer_folded": 0.2154,
+   "cer_md_stripped": 0.0034
+  }
+ },
+ "paddle@3070Ti": {
+  "4": {
+   "text": "Foreword\n\nMany words are used so commonly today that their original derivation and meaning have been entirely lost. Everyone is familiar with the word mulatto, which has come to mean any person of mixed white and Negro blood. Few realise, however, that it is derived from the Spanish word mulo, meaning mule. Just as the mule is a hybrid of mixed blood – that of a horse and a jackass – so was the term originally applied to a man (for mulatto is masculine in Spanish) who was the offspring of a white father and a Negro mother. The chance of a mating between a Negro man and a white woman was so entirely out of the question that it was not even considered. So too do we go back to Spanish for the word mestizo, which was used to signify a person whose coloured blood was so considerably attenuated that in some cases it was scarcely discernible. Although the word mulatto remained unchanged in its journey from Cuba to the United States, the word mestizo was anglicised to mustee and, during slave times in the southern United States, it came to signify a white or nearly white Negro, such as an octoroon. Regardless of the whiteness of skin or fineness of features, the mustee was still a Negro and, unless he had been manumitted, still a bondsman.\n\nL.H.",
+   "mean_conf": null,
+   "secs": 4.6,
+   "cer": 0.0063,
+   "wer": 0.0345,
+   "insertion": 0.0132,
+   "cer_folded": 0.0048
+  },
+  "5": {
+   "text": "\n\n\n\n\n",
+   "mean_conf": null,
+   "secs": 0.8,
+   "cer": 0.0,
+   "wer": 0.0,
+   "insertion": 0.0,
+   "cer_folded": 0.0
+  },
+  "6": {
+   "text": "THE cold drizzle had started during the night and by morning, with the rising of the wind, it had settled down to a steady downpour, which beat at the scraggly chrysanthemums and the late asters that struggled for survival around the front steps of the big house at Falconhurst Plantation. It flattened their torn petals down into the mud and marked their doom for another season. A curtain of water fell from the roof of the long gallery, spattering into the rain barrels that Lucretia Borgia had had the boys place outside. Rain water was soft for washing clothes, and she never missed an opportunity to fill her barrels against next week's wash day. The row of rush-bottomed chairs had been tip-tilted up against the wall of the house but so great was the force of the storm that they were already dripping water.\n\nInside, however, it was warm and comfortable. A log fire burned in the brick fireplace of the dining-room, and an iron tea-kettle sang on the hob, lifting its heavy lid at regular intervals to let off the steam. Warren Maxwell, owner of Falconhurst, sat at the breakfast table, surveying the dirty dishes that had not been cleared away. He was unmindful of the congealing ham fat and the yellow tracery of fried eggs on his plate, the coffee grounds in his cup, and the rumpled red and white tablecloth. Minute by minute his anger mounted.\n\n7",
+   "mean_conf": null,
+   "secs": 4.6,
+   "cer": 0.0044,
+   "wer": 0.0247,
+   "insertion": 0.0041,
+   "cer_folded": 0.0044
+  },
+  "7": {
+   "text": "- Goddam that Lucretia Borgia!' He brought his fist down heavily on the table, making the plates and even the tin coffee-pot jump, and then winced from the ensuing pain. 'Ain' she a-knowin' I cain' git up by myself? Where she at anyhow? 'N where's Memnon 'n where's that goddam li'l squirt Jude? Ain' nobody goin' to pay no 'tention to me? Lucretia Borgia!' He cupped one hand around his mouth and bellowed. 'Where yo', Lucretia Borgia, yo' black bitch yo'? 'N where yo', Memnon, 'n yo', Jude? Git in here quick or by God a'mighty, I'll hang yo' up 'n have the meat stripped right off'n yore bones. Kin do it too.'\n\n'Yo' a-callin' me, Masta Warren suh?' A rich female voice floated in from the kitchen.\n\n'Co'se I'm callin' yo'. What in hell yo' think I'm a-hollerin' for? 'N where's that worthless Memnon at 'n that idiot Jude?'\n\n'Memnon he jes' histed hisself out to be barn for to fetch me the saleratus what was left in the wagon yesterday when he come home from Benson. Jude he a-gone upstairs to fetch hot water for Ellen so's she kin wash Miz Sophie 'fore she gets her dressed. What yo' wan', Masta Warren suh?'\n\n'Wants to git up from this goddam table, tha's what I wan'. Wan' to git me into the rockin' chair before the fire in the setting room. Wan' me a good hot toddy. Wan' Ellen down here 'n wan' li'l Miz Sophie here. Lots things I'm wantin' 'n here I set.'\n\nA colossal female appeared in the kitchen door. Her hugeness was not merely corpulence, although she was big-girthed, but she was big all over-statuesque and commanding. Junoesque might be the word to describe her, although it would have to be a black Juno. Her colour was a warm tobacco brown, betokening some distant effusion of white blood, and her nose and lips, although distinctly Negroid, were not those of a flat-faced Bush Negro. She was probably a mixture of Fan and Jaloff with possibly some Sudanese thrown in, which would account for her height and size. The rough butternut-brown osnaburg dress she was wearing strained to enfold the huge, melon-shaped breasts but it was clean and the apron she wore over it was white and stiffly starched. A length of bright red calico was bound around her head and the gold earrings that twinkled in her ears testified to the special position she held in this household.\n\n'Po' Masta Warren!' There was genuine solicitude in her",
+   "mean_conf": null,
+   "secs": 8.5,
+   "cer": 0.0055,
+   "wer": 0.0329,
+   "insertion": 0.0135,
+   "cer_folded": 0.0055
+  }
+ },
+ "surya0.17@cached": {
+  "4": {
+   "text": "Foreword\nMany words are used so commonly today that their original deri-\nvation and meaning have been entirely lost. Everyone is familiar\nwith the word mulatto, which has come to mean any person of\nmixed white and Negro blood. Few realise, however, that it is\nderived from the Spanish word mulo, meaning mule. Just as the\nmule is a hybrid of mixed blood - that of a horse and a jackass -\nso was the term originally applied to a man (for mulatto is mas-\nculine in Spanish) who was the offspring of a white father and a\nNegro mother. The chance of a mating between a Negro man\nand a white woman was so entirely out of the question that it\nwas not even considered. So too do we go back to Spanish for\nthe word mestizo, which was used to signify a person whose col-\noured blood was so considerably attenuated that in some cases it\nwas scarcely discernible. Although the word mulatto remained\nunchanged in its journey from Cuba to the United States, the\nword mestizo was anglicised to mustee and, during slave times in\nthe southern United States, it came to signify a white or nearly\nwhite Negro, such as an octoroon. Regardless of the whiteness of\nskin or fineness of features, the mustee was still a Negro and,\nunless he had been manumitted, still a bondsman.\nL.H.",
+   "mean_conf": 0.9838630752244353,
+   "secs": null,
+   "cer": 0.0,
+   "wer": 0.0,
+   "insertion": 0.0,
+   "cer_folded": 0.0
+  },
+  "5": {
+   "text": "1 <b>%</b>.)<br>1,4",
+   "mean_conf": 0.4239976623883614,
+   "secs": null,
+   "cer": 1.0,
+   "wer": 1.0,
+   "insertion": 1.0,
+   "cer_folded": 1.0
+  },
+  "6": {
+   "text": "THE cold drizzle had started during the night\nand by morning, with the rising of the wind, it had settled down\nto a steady downpour, which beat at the scraggly chrysanthemums\nand the late asters that struggled for survival around the front\nsteps of the big house at Falconhurst Plantation. It flattened their\ntorn petals down into the mud and marked their doom for another\nseason. A curtain of water fell from the roof of the long gallery,\nspattering into the rain barrels that Lucretia Borgia had had the\nboys place outside. Rain water was soft for washing clothes, and\nshe never missed an opportunity to fill her barrels against next\nweek's wash day. The row of rush-bottomed chairs had been tip-\ntilted up against the wall of the house but so great was the force\nof the storm that they were already dripping water.\nInside, however, it was warm and comfortable. A log fire\nburned in the brick fireplace of the dining-room. and an iron\ntea-kettle sang on the hob, lifting its heavy lid at regular inter-\nvals to let off the steam. Warren Maxwell, owner of Falconhurst,\nsat at the breakfast table, surveying the dirty dishes that had not\nbeen cleared away. He was unmindful of the congealing ham fat\nand the yellow tracery of fried eggs on his plate, the coffee\ngrounds in his cup, and the rumpled red and white tablecloth.\nMinute by minute his anger mounted.",
+   "mean_conf": 0.9990758405363119,
+   "secs": null,
+   "cer": 0.0029,
+   "wer": 0.0082,
+   "insertion": 0.0,
+   "cer_folded": 0.0029
+  },
+  "7": {
+   "text": "'Goddam that Lucretia Borgia!' He brought his fist down\nheavily on the table, making the plates and even the tin coffee-\npot jump, and then winced from the ensuing pain. 'Ain' she\na-knowin' I cain' git up by myself? Where she at anyhow? 'N\nwhere's Memnon 'n where's that goddam li'l squirt Jude? Ain'\nnobody goin' to pay no 'tention to me? Lucretia Borgia!' He\ncupped one hand around his mouth and bellowed. 'Where yo',\nLucretia Borgia, yo' black bitch yo'? 'N where yo', Memnon, 'n\nyo', Jude? Git in here quick or by God a'mighty, I'll hang yo' up\n'n have the meat stripped right off'n yore bones. Kin do\nit too.'\n'Yo' a-callin' me, Masta Warren suh?' A rich female voice\nfloated in from the kitchen.\n'Co'se I'm callin' yo'. What in hell yo' think I'm a-hollerin'\nfor? 'N where's that worthless Memnon at 'n that idiot Jude?'\n'Memnon he jes' histed hisself out to de barn for to fetch me\nthe saleratus what was left in the wagon yisterday when he\ncomed home from Benson. Jude he a-gone upstairs to fetch hot\nwater for Ellen so's she kin wash Miz Sophie 'fore she gits her\ndressed. What yo' wan', Masta Warren suh?'\n'Wants to git up from this goddam table, tha's what I wan'.\nWan' to git me into the rockin' chair before the fire in the settin'\nroom. Wan' me a good hot toddy. Wan' Ellen down here 'n wan'\nli'l Miz Sophie here. Lotsa things I'm wantin' 'n here I set.'\nA colossal female appeared in the kitchen door. Her hugeness\nwas not merely corpulence, although she was big-girthed, but she\nwas big all over - statuesque and commanding. Junoesque might\nbe the word to describe her, although it would have to be a black\nJuno. Her colour was a warm tobacco brown, betokening some\ndistant effusion of white blood, and her nose and lips, although\ndistinctly Negroid, were not those of a flat-faced Bush Negro.\nShe was probably a mixture of Fan and Jaloff with possibly\nsome Sudanese thrown in, which would account for her height\nand size. The rough butternut-brown osnaburg dress she was\nwearing strained to enfold the huge, melon-shaped breasts but it\nwas clean and the apron she wore over it was white and stiffly\nstarched. A length of bright red calico was bound around her\nhead and the gold earrings that twinkled in her ears testified to\nthe special position she held in this household.\n'Po' Masta Warren!' There was genuine solicitude in her\n8",
+   "mean_conf": 0.9916245397227573,
+   "secs": null,
+   "cer": 0.0,
+   "wer": 0.0,
+   "insertion": 0.0,
+   "cer_folded": 0.0
+  }
+ }
+}

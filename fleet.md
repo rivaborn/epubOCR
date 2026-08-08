@@ -266,6 +266,9 @@ any of this — it consumes OCR text after routing. No interaction to plan aroun
 | 6 | Multi-URL surya2 (list-valued `surya2_inference_url`) *or* document the `EPUBOCR_CONFIG`-per-shard pattern           | `ocr/surya2.py` / docs         |
 | 7 | Throughput mode for `bakeoff.py` (timed `run_batch` sweeps); the eval harness stays fidelity-only, by design         | `scripts/bakeoff.py`           |
 
+> **Raw data + the scripts that produced it:** [`benchmarks/2026-08-06-fleet/`](benchmarks/2026-08-06-fleet/).
+> The hand-keyed gold set is [`tests/fixtures/mustee.gold.json`](tests/fixtures/mustee.gold.json).
+
 ## 10. Measured 2026-08-06 — first accuracy bake-off (answers #9, part of #1/#3)
 
 Fleet was rearranged same day: surya-ocr-2 + chandra-ocr-2 co-resident on **spark3**
