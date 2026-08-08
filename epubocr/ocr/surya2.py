@@ -28,10 +28,18 @@ both are the same ``surya-ocr`` package at incompatible versions) and provide a 
 from __future__ import annotations
 
 import importlib.metadata as _md
+import threading
 
 from pathlib import Path
 
 from .base import OCREngine, OcrResult, OcrWord
+
+# Surya's vLLM backend reads SURYA_INFERENCE_URL / SURYA_MODEL_CHECKPOINT off a
+# PROCESS-WIDE settings singleton, but only inside ``backend.start()`` — after which it
+# holds its own OpenAI client and served-model name. So N engines can serve N different
+# units from one process **iff** each one's start() runs while its own values are in the
+# globals. This lock serializes that window; see ``pool.PoolEngine``.
+_SETTINGS_LOCK = threading.Lock()
 
 # Cap full-page generation so a hard image (e.g. a cover the VLM can't read) can't churn
 # toward Surya's 12288-token default for minutes. Real pages stay well under this — page 7
@@ -111,21 +119,30 @@ class Surya2Engine(OCREngine):
             from surya.inference import SuryaInferenceManager
             from surya.recognition import RecognitionPredictor
             from surya.settings import settings as _surya_settings
-            # _full_page_ocr reads this at call time off the settings singleton; lowering it
-            # bounds a runaway on an unreadable page without truncating any real page.
-            if self._max_tokens:
-                _surya_settings.SURYA_MAX_TOKENS_FULL_PAGE = int(self._max_tokens)
-            # vllm backend: point at an already-running server (no Docker spawn). Surya's
-            # attach path requires the server's served model id to equal this checkpoint.
-            if self._inference_url:
-                _surya_settings.SURYA_INFERENCE_URL = self._inference_url
-            if self._model:
-                _surya_settings.SURYA_MODEL_CHECKPOINT = self._model
-            if self._parallel:
-                _surya_settings.SURYA_INFERENCE_PARALLEL = int(self._parallel)
-            # The backend (and model load) only engages on the first OCR call.
-            self._manager = SuryaInferenceManager(method=self._backend)
-            self._rec = RecognitionPredictor(self._manager)
+            # Hold the lock across set-globals -> construct -> start(): start() is where the
+            # backend reads the URL/model and captures its own client, so releasing earlier
+            # would let a sibling engine's URL win the race (both would serve one unit).
+            with _SETTINGS_LOCK:
+                # _full_page_ocr reads this at call time off the settings singleton; lowering
+                # it bounds a runaway on an unreadable page without truncating any real page.
+                if self._max_tokens:
+                    _surya_settings.SURYA_MAX_TOKENS_FULL_PAGE = int(self._max_tokens)
+                # vllm backend: point at an already-running server (no Docker spawn). Surya's
+                # attach path requires the server's served model id to equal this checkpoint.
+                if self._inference_url:
+                    _surya_settings.SURYA_INFERENCE_URL = self._inference_url
+                if self._model:
+                    _surya_settings.SURYA_MODEL_CHECKPOINT = self._model
+                if self._parallel:
+                    _surya_settings.SURYA_INFERENCE_PARALLEL = int(self._parallel)
+                manager = SuryaInferenceManager(method=self._backend)
+                # Force the attach NOW rather than on the first OCR call: this is the read
+                # that pins this instance to its own unit. (Also surfaces a wrong served-name
+                # as a config error at construction instead of mid-book.)
+                if self._inference_url:
+                    manager.start()
+                self._manager = manager
+                self._rec = RecognitionPredictor(self._manager)
         except ImportError as exc:
             raise RuntimeError(
                 f"Surya 2 needs a serving backend ('{self._backend}'): {exc}. Install it "

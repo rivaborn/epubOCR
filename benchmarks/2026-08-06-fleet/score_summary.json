@@ -1,0 +1,17 @@
+{
+ "surya2": {
+  "pages": 359,
+  "empty": 1,
+  "mean_conf": 0.9910505356376242
+ },
+ "paddleocr": {
+  "pages": 359,
+  "empty": 1,
+  "mean_conf": 0.9809668116072925
+ },
+ "surya0.17": {
+  "pages": 359,
+  "empty": 0,
+  "mean_conf": 0.9845156237430072
+ }
+}

@@ -126,6 +126,54 @@ def _body(tree):
     return tree
 
 
+def _epub_outline(zf, opf_path: str, manifest_items: dict, pages: list["SpinePage"]) -> list[list]:
+    """Chapter starts from the EPUB's NCX TOC, mapped to page indices -> ``[[idx, title], ...]``.
+
+    Best-effort: maps each navPoint's target document to the first page produced from that
+    document. Empty when there's no NCX (drives a single flowing body, as for raw scans).
+    """
+    ncx_href = None
+    for it in manifest_items.values():
+        if it.get("media_type") == "application/x-dtbncx+xml":
+            ncx_href = _resolve(opf_path, it["href"])
+            break
+    if not ncx_href:
+        return []
+    try:
+        root = etree.fromstring(zf.read(ncx_href))
+    except (KeyError, etree.XMLSyntaxError):
+        return []
+
+    href_to_idx: dict[str, int] = {}
+    for p in pages:
+        f = (p.href or "").split("#")[0]
+        if f:
+            href_to_idx.setdefault(f, p.index)
+
+    seen: set[int] = set()
+    outline: list[list] = []
+    for np in root.iter():
+        if _localname(np.tag) != "navPoint":
+            continue
+        text = src = ""
+        for el in np.iter():                      # own navLabel/content come before nested navPoints
+            ln = _localname(el.tag)
+            if ln == "text" and not text:
+                text = " ".join("".join(el.itertext()).split())
+            elif ln == "content" and not src:
+                src = el.get("src", "")
+            if text and src:
+                break
+        if not src:
+            continue
+        idx = href_to_idx.get(_resolve(ncx_href, src).split("#")[0])
+        if idx is not None and text and idx not in seen:
+            seen.add(idx)
+            outline.append([idx, text])
+    outline.sort(key=lambda e: e[0])
+    return outline
+
+
 def ingest(epub_path: Path, project: BookProject) -> list[SpinePage]:
     project.ensure()
     epub_path = Path(epub_path)
@@ -178,11 +226,14 @@ def ingest(epub_path: Path, project: BookProject) -> list[SpinePage]:
                 pages.append(SpinePage(gidx, idref, href, PageType.EMPTY, text_len, [], []))
                 gidx += 1
 
+        outline = _epub_outline(zf, opf, manifest, pages)
+
     project.write_json(project.manifest_path, {
         "epub": epub_path.name,
         "opf": opf,
         "page_count": len(pages),
         "counts": {t.value: sum(1 for p in pages if p.page_type is t) for t in PageType},
+        "outline": outline,
         "pages": [p.to_json() for p in pages],
     })
     return pages

@@ -88,6 +88,23 @@ def _extract_or_render(doc, page, out_dir: Path, stem: str) -> str:
     return fname
 
 
+def _pdf_outline(doc) -> list[list]:
+    """Chapter starts from the PDF's embedded bookmarks -> ``[[page_index, title], ...]``.
+
+    These drive chapter-aware assembly (one spine document per chapter). Empty when the PDF
+    carries no outline (common for raw scans), in which case the body assembles as one flow.
+    """
+    try:
+        toc = doc.get_toc(simple=True)        # [[level, title, page(1-based)], ...]
+    except Exception:                         # noqa: BLE001 - odd/missing outline -> none
+        return []
+    out: list[list] = []
+    for entry in toc:
+        if len(entry) >= 3 and entry[1] and entry[2] and int(entry[2]) >= 1:
+            out.append([int(entry[2]) - 1, str(entry[1]).strip()])
+    return out
+
+
 def ingest_pdf(pdf_path: Path, project: BookProject, *, force_ocr: bool = False) -> list[SpinePage]:
     """Classify a PDF's pages and write the same ``manifest.json`` the EPUB path produces.
 
@@ -102,8 +119,10 @@ def ingest_pdf(pdf_path: Path, project: BookProject, *, force_ocr: bool = False)
         shutil.copy2(pdf_path, dest)
 
     pages: list[SpinePage] = []
+    outline: list[list] = []
     doc = fitz.open(str(pdf_path))
     try:
+        outline = _pdf_outline(doc)
         for pno in range(doc.page_count):
             page = doc[pno]
             tlen = _text_len(page)
@@ -125,6 +144,7 @@ def ingest_pdf(pdf_path: Path, project: BookProject, *, force_ocr: bool = False)
         "force_ocr": force_ocr,
         "page_count": len(pages),
         "counts": {t.value: sum(1 for p in pages if p.page_type is t) for t in PageType},
+        "outline": outline,
         "pages": [p.to_json() for p in pages],
     })
     return pages

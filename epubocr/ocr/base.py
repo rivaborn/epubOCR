@@ -58,3 +58,22 @@ class OCREngine(abc.ABC):
         the throughput win for whole-book OCR comes from.
         """
         return [self.run(p) for p in image_paths]
+
+
+def run_batch_threaded(run_one, image_paths: list[Path], parallel: int) -> list[OcrResult]:
+    """``run_batch`` for engines whose unit of work is one HTTP request per page.
+
+    Surya has its own concurrent fan-out inside ``RecognitionPredictor``; a plain
+    OpenAI-vision engine (``vlm``, ``chandra``, served ``paddleocr``) does not, so
+    without this a whole book is transcribed one blocking request at a time and the
+    server's continuous batching — the entire reason it is fast — never engages.
+
+    Order is preserved by index, never by completion.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    if parallel <= 1 or len(image_paths) <= 1:
+        return [run_one(p) for p in image_paths]
+    with ThreadPoolExecutor(max_workers=min(parallel, len(image_paths)),
+                            thread_name_prefix="ocrbatch") as ex:
+        return list(ex.map(run_one, image_paths))

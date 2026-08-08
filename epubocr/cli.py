@@ -109,14 +109,18 @@ def ingest(source: Path = typer.Argument(..., exists=True, dir_okay=False,
 @app.command()
 def ocr(
     book: str = typer.Argument(..., help="Book slug under projects_root, or path to an ingested EPUB"),
-    engine: str = typer.Option(None, help="surya2|surya|tesseract|paddle|vlm (default from config; surya=fast 0.17)"),
+    engine: str = typer.Option(None, help="surya2|surya|chandra|paddleocr|tesseract|paddle|vlm "
+                                          "(default from config; surya=fast 0.17)"),
     force: bool = typer.Option(False, help="ignore cache and re-OCR every page"),
     limit: int = typer.Option(None, help="OCR only the first N image pages (sampling big books)"),
     preprocess: bool = typer.Option(None, "--preprocess/--no-preprocess",
                                     help="override the engine's preprocessing (contrast/deskew) default"),
+    quiet: bool = typer.Option(False, "--quiet", help="summary only, no per-page lines"),
 ):
     """Run OCR over an ingested book's image pages → ocr/page_XXXX.{raw.json,text.txt}."""
-    from .pipeline import ocr_book
+    import time
+
+    from .pipeline import _last_engine, ocr_book
     from .storage import BookProject
 
     cfg = load_config()
@@ -126,12 +130,22 @@ def ocr(
                     fg=typer.colors.RED)
         raise typer.Exit(code=2)
 
+    t0 = time.perf_counter()
     results = ocr_book(project, engine or cfg.ocr_default_engine, cfg, force=force, limit=limit,
                        preprocess=preprocess)
+    wall = time.perf_counter() - t0
     n_cached = sum(1 for r in results if r.cached)
     n_degenerate = sum(1 for r in results if r.degenerate)
     typer.echo(f"OCR'd {len(results)} image pages ({n_cached} from cache, "
                f"{n_degenerate} degenerate->facsimile) -> {project.ocr}")
+    n_new = len(results) - n_cached
+    rate = f"{wall / n_new:.1f}s/page" if n_new else "all cached"
+    typer.echo(f"  wall {wall:.1f}s for {n_new} new page(s) -> {rate}")
+    eng = _last_engine.get("engine")
+    if hasattr(eng, "summary"):
+        typer.echo(f"  units: {eng.summary()}")
+    if quiet:
+        return
     for r in results:
         conf = f"{r.mean_conf:.2f}" if r.mean_conf is not None else "n/a"
         flag = "  DEGENERATE->facsimile" if r.degenerate else ""
@@ -179,6 +193,12 @@ def build(
     title: str = typer.Option(None, help="title for the output EPUB"),
     cleanup_endpoint: str = typer.Option(None, help="override cleanup endpoint (ollama|vllm)"),
     cleanup_model: str = typer.Option(None, help="override cleanup model (e.g. reuse a loaded model)"),
+    conf_floor: float = typer.Option(0.80, help="OCR confidence below which a page becomes facsimile"),
+    consensus: str = typer.Option(None, help="second engine to cross-check the least-trusted pages "
+                                             "(surya2|chandra|paddleocr|vlm) — the only guard that "
+                                             "catches a CONFIDENT fabrication"),
+    consensus_max_pages: int = typer.Option(0, help="how many least-trusted pages to cross-check "
+                                                   "(0 = off; costs one extra transcription each)"),
 ):
     """Assemble an improved EPUB from the manifest + OCR (run `ingest` then `ocr` first)."""
     from .pipeline import build_book
@@ -190,13 +210,22 @@ def build(
         typer.secho(f"no manifest at {project.manifest_path} — run `epubocr ingest` first.",
                     fg=typer.colors.RED)
         raise typer.Exit(code=2)
+    if consensus and consensus_max_pages <= 0:
+        typer.secho("--consensus needs --consensus-max-pages N (how many pages to spend on it).",
+                    fg=typer.colors.RED)
+        raise typer.Exit(code=2)
 
     out_path, summary = build_book(project, cfg, use_llm=use_llm, title=title,
-                                   cleanup_endpoint=cleanup_endpoint, cleanup_model=cleanup_model)
+                                   cleanup_endpoint=cleanup_endpoint, cleanup_model=cleanup_model,
+                                   conf_floor=conf_floor, consensus_engine=consensus,
+                                   consensus_max_pages=consensus_max_pages)
     typer.echo(f"built {out_path}")
     typer.echo(f"  pages={summary['docs']} reflowable={summary['reflowable']} "
                f"facsimile={summary['facsimile']} preserved={summary['preserved']} "
                f"held={summary['held']}")
+    if summary.get("consensus_checked"):
+        typer.echo(f"  consensus: {summary['consensus_checked']} page(s) cross-checked, "
+                   f"{summary['consensus_rejected']} rejected -> facsimile")
 
     checks = structural_checks(project.read_json(project.manifest_path))
     for w in checks.warnings:

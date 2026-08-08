@@ -34,7 +34,17 @@ challenger, never the blind default. Low-confidence or degenerate pages always f
   not by opinion.
 - **Fidelity verifier** — holds any LLM cleanup that drifts from the OCR ground truth (char
   edit-distance, inserted-word ratio, length delta) and falls back to the faithful text.
-- **OCR degeneracy guard** — detects VLM repetition loops and routes those pages to facsimile.
+- **OCR degeneracy guard — two tests, because one is not enough.** A repetition detector catches a
+  single token looping; a *length outlier* test catches a model looping over **varied** filler, or
+  fabricating on a blank page, which slips under the repetition threshold entirely. Measured: the
+  length test caught 12 of 12 real failures where repetition caught 1, with no false positives over
+  359 pages.
+- **Cross-engine consensus** (`build --consensus <engine>`) — a second engine re-transcribes the
+  least-trusted pages, and disagreement wins over a confident primary. This is the only guard that
+  catches a **confident** fabrication: engines have been measured inventing whole pages at 0.95–0.99
+  confidence, invisible to a confidence floor.
+- **Multi-unit OCR** — fan one book across every free unit of a GPU fleet, loading the model onto an
+  idle unit if none is serving it (see [`fleet.md`](fleet.md)).
 - **Per-page adaptive output** — reflowable XHTML for prose, facsimile fallback for tables, poetry,
   math, illustrations, or low-confidence pages; EPUB3 `page-list` nav + pagebreak anchors.
 - **Cache-first** — every stage keyed on `content + params + model + prompt-version`; re-runs only
@@ -61,6 +71,83 @@ uv run epubocr build book          # → book_projects/book/output/improved.epub
 
 Other commands: `eval` (compare engines on a gold set), `endpoints` (live reachability check),
 `ocr-page` (single-image smoke test), `show-config`.
+
+## Configuring `config.local.toml`
+
+`config.toml` is a committed template with `127.0.0.1` placeholders. Real endpoints go in
+**`config.local.toml`**, which is **gitignored and therefore per-machine** — it does not travel with
+a clone, so a new machine needs it written by hand. `config.py` prefers it over the template;
+override the path with `$EPUBOCR_CONFIG`.
+
+Target the **IP literal, not `localhost`** — an IPv4-only relay makes Python's happy-eyeballs stall
+~5 s on IPv6 first.
+
+### Minimum: a single served Surya 2
+
+```toml
+[ocr]
+default_engine       = "surya2"
+surya2_backend       = "vllm"
+surya2_inference_url = "http://192.168.1.52:8000/v1"   # a server whose FIRST /v1/models entry is the model
+surya2_model         = "surya-ocr-2"                   # must equal its --served-model-name
+surya2_parallel      = 32                              # measured knee on both a 3090 and a GB10
+```
+
+⚠️ **Surya's attach compares only the FIRST entry of `/v1/models`.** A single-model server (a node's
+own `host:port`) works; a multi-model gateway catalog does **not** — it fails with
+`Model mismatch … got '<whatever is listed first>'`.
+
+### Recommended with a fleet: let the pool resolve placement
+
+If you run an [LLMConfig](https://github.com/rivaborn/LLMConfig) gateway, **do not name a lane.**
+Which unit serves a model changes — on this lab `surya-ocr-2` moved twice in one day, silently
+breaking a pinned URL. Ask the fleet instead:
+
+```toml
+[ocr]
+default_engine      = "surya2"
+surya2_backend      = "vllm"
+pool                = "auto"          # or an explicit list: ["spark1", "spark2"]
+pool_model          = "surya-ocr-2"   # served name to look for / request
+pool_gateway        = "http://192.168.1.40:11430"
+pool_autoload       = true            # load onto an IDLE unit when none is serving it
+pool_autoload_units = 1               # a cold load costs minutes; a 2nd unit buys only ~1.55x
+pool_max_units      = 4               # cap when several units already serve it
+pool_chunk          = 32              # pages per unit per call — keep >= surya2_parallel
+surya2_parallel     = 32
+```
+
+`pool = "auto"` uses units already serving the model, else loads it onto an idle one. It never takes
+a unit that is mid-request, mid-swap, or under a non-preemptible lease. Set `pool_autoload = false`
+to require a hand-loaded model.
+
+> `pool_chunk` must be **>= `surya2_parallel`**, and `ocr_book` will raise the batch to
+> `pool_chunk x units` automatically. If a pool ever reports all pages on one unit with the others
+> at `0pg`, that ratio is why.
+
+### Endpoints, roles, models (only for `--engine vlm` and `--llm` cleanup)
+
+Three levels of indirection, because backends name the same model differently (Ollama tags
+`qwen2.5vl:7b`; vLLM serves `qwen2.5-vl-7b`):
+
+```toml
+[endpoints.gateway]                                   # or [endpoints.ollama] / [endpoints.vllm]
+base_url = "http://192.168.1.40:11430/v1"
+api_key  = "EMPTY"                                    # Ollama ignores it, but the SDK requires one
+
+[roles]                                               # role -> endpoint name
+vlm_ocr      = "gateway"
+text_cleanup = "gateway"
+
+[models.gateway]                                      # alias -> that endpoint's model id
+vlm_ocr      = "qwen2.5vl:7b"
+vlm_ocr_hard = "qwen2.5-vl-32b"
+text_cleanup = "qwen3:32b"
+text_xhtml   = "qwen2.5-coder:32b"
+```
+
+Leave these out entirely if you only run Surya/Tesseract — the default build never calls an endpoint.
+Check what resolved with `uv run epubocr show-config` and `uv run epubocr endpoints`.
 
 ## How it works
 
