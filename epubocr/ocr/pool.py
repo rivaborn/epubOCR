@@ -177,6 +177,27 @@ def _get(gateway: str, path: str, timeout: float = 20.0):
         return json.loads(r.read().decode("utf-8"))
 
 
+def resolve_role(gateway: str, model: str, timeout: float = 10.0) -> str:
+    """Turn a ROLE name into the model id it resolves to; pass anything else back.
+
+    Needed because this module matches `model` against RESIDENCY — `/api/status`
+    reports served names and knows nothing about roles — so a bare role would
+    never match a loaded unit and would re-trigger autoload on every run, even
+    with the model already up.
+
+    An unreadable gateway returns the input unchanged, which degrades to exactly
+    the pre-role behaviour rather than to an error.
+    """
+    try:
+        data = _get(gateway, "/api/roles", timeout)
+    except Exception:      # noqa: BLE001 — old gateway or one that is down
+        return model
+    for row in data.get("roles", []):
+        if row.get("role") == model and row.get("resolves_to"):
+            return row["resolves_to"]
+    return model
+
+
 def _post(gateway: str, path: str, body: dict, timeout: float = 30.0):
     import json
     import urllib.request
@@ -342,6 +363,10 @@ def build_pool(config: Config, engine_name: str, *, make_engine) -> PoolEngine:
     ocr = config.raw.get("ocr", {}) or {}
     gateway = ocr.get("pool_gateway") or _DEFAULT_GATEWAY
     model = ocr.get("pool_model") or ocr.get(f"{engine_name}_model")
+    # `pool_model` may name a ROLE ("ocr"). Resolve it once, here, so every use
+    # below — residency matching, autoload, and the per-unit sub-engines — sees
+    # the same concrete served name.
+    model = resolve_role(gateway, model)
     spec = ocr.get("pool")
 
     direct = bool(ocr.get("pool_direct", True))
