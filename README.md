@@ -109,7 +109,7 @@ default_engine      = "surya2"
 surya2_backend      = "vllm"
 pool                = "auto"          # or an explicit list: ["spark1", "spark2"]
 pool_model          = "surya-ocr-2"   # served name to look for / request
-pool_gateway        = "http://192.168.1.40:11430"
+pool_gateway        = "http://192.168.1.15:11430"
 pool_autoload       = true            # load onto an IDLE unit when none is serving it
 pool_autoload_units = 1               # a cold load costs minutes; a 2nd unit buys only ~1.55x
 pool_max_units      = 4               # cap when several units already serve it
@@ -132,7 +132,7 @@ Three levels of indirection, because backends name the same model differently (O
 
 ```toml
 [endpoints.gateway]                                   # or [endpoints.ollama] / [endpoints.vllm]
-base_url = "http://192.168.1.40:11430/v1"
+base_url = "http://192.168.1.15:11430/v1"
 api_key  = "EMPTY"                                    # Ollama ignores it, but the SDK requires one
 
 [roles]                                               # role -> endpoint name

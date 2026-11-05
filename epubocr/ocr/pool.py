@@ -35,7 +35,7 @@ from pathlib import Path
 from ..config import Config
 from .base import OCREngine, OcrResult
 
-_DEFAULT_GATEWAY = "http://192.168.1.40:11430"
+_DEFAULT_GATEWAY = "http://192.168.1.15:11430"
 
 
 @dataclass
@@ -352,7 +352,7 @@ def build_pool(config: Config, engine_name: str, *, make_engine) -> PoolEngine:
     Config (all under ``[ocr]``)::
 
         pool = "auto"                    # or a list of unit ids: ["spark1", "spark2"]
-        pool_gateway = "http://192.168.1.40:11430"
+        pool_gateway = "http://192.168.1.15:11430"
         pool_model = "surya-ocr-2"       # served name to look for / request
         pool_autoload = true             # load onto an idle unit when nothing serves it
         pool_autoload_units = 1          # how many idle units to load onto

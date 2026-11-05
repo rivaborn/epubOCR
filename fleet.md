@@ -2,7 +2,7 @@
 
 `epubocr` was designed for "a laptop plus an optional GPU host" ([epubOCR.md](epubOCR.md)
 §Topology). The homelab is now a six-unit fleet behind the LLMConfig gateway
-(`192.168.1.40:11430`): an RTX 3090, an RTX 3070 Ti slot lane, and four DGX Spark GB10
+(`192.168.1.15:11430`): an RTX 3090, an RTX 3070 Ti slot lane, and four DGX Spark GB10
 nodes. This doc decides, per pipeline stage, the optimal model and placement — and proposes
 an "OCR mode" fleet arrangement. It is analysis only: the recommended code/config changes
 are listed as future work (§9), not made here. Numbers are labeled **[measured — provenance]**
